@@ -1,0 +1,3 @@
+song_id,source_path,title,artist,duration_seconds,codec,integrity_fingerprint
+generated-tone-a,fixtures/generated/tone-a.wav,Generated Tone A,Synthetic Fixture,0.10,wav,0000000000000000000000000000000000000000000000000000000000000001
+generated-tone-b,fixtures/generated/tone-b.wav,Generated Tone B,Synthetic Fixture,0.05,wav,0000000000000000000000000000000000000000000000000000000000000002
