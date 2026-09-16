@@ -1,6 +1,6 @@
 # Implementation and qualification status
 
-This candidate is based on `dd76c680470efc3ce6bde7976c4c7196a4851486`. It is
+This candidate is based on `7cbba9e`. It is
 not a release or standing permission to scan or acquire private music. A bounded,
 explicitly authorized 20-song live-model qualification has occurred.
 
@@ -80,3 +80,26 @@ the acoustic, semantic-audio, and fused lenses and safely abstained with zero
 qualified candidates for this small subset. Private logs and run artifacts remain
 outside Git. This qualifies the bounded 20-song execution gate, not the 200-song,
 approximately 782-song, 10,000-song, lyric-model, or quality-evaluation gates.
+
+## Live 775-file qualification
+
+On 2026-09-16, the staged full-library campaign acquired 775 of 782 explicitly
+authorized URLs. Seven remained fail-closed: five required authentication for
+age gates and two were unavailable. No cookies, authentication, search, playlist
+scraping, or bypass was used.
+
+The research profile cataloged 775 files as 774 unique SHA-derived musical
+identities, produced 1548 finite unit-normalized feature rows and 4229 segments,
+and reported zero catalog or feature failures. The 200-song seed embeddings were
+reused. Cold full-run feature work took 1780.92 internal seconds; the unchanged
+rerun served every pre-normalization row from cache in 0.643 internal seconds and
+1.55 seconds wall time. Peak total GPU memory was 9235 MiB, minimum available
+host RAM was 7904.7 MiB, peak temperature was 56 C, and peak power was 122.84 W.
+No OOM, NaN, paging, driver reset, or data loss was observed.
+
+Discovery retained one 11-member narrow fused candidate with 1.0 stability,
+0.816 cohesion, and 0.799 separation. Atomic JSON, CSV, and M3U8 exports each
+contained 11 membership rows. The private song names and artifacts are not
+committed. This qualifies staged local execution at this library size; it does
+not qualify lyric inference, subjective playlist quality, private-label
+evaluation, blind human comparison, or the fresh 10,000-song gate.
