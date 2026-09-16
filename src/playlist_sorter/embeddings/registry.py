@@ -18,7 +18,9 @@ class LazyAdapter:
     dtype: str
 
     def load(self) -> object:
-        raise RuntimeError(f"{self.name} adapter is intentionally lazy; install its runtime adapter and explicitly load {self.repository}@{self.revision}")
+        raise RuntimeError(
+            f"{self.name} adapter is intentionally lazy; install its runtime adapter and explicitly load {self.repository}@{self.revision}"
+        )
 
 
 def adapter_for(name: str) -> LazyAdapter:

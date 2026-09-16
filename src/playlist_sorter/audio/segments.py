@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import audioop
 from pathlib import Path
+import shutil
+import struct
+import subprocess
 import wave
 
 TARGET_RATE = 24_000
@@ -36,10 +39,15 @@ def decode_wav_mono_24khz(path: str | Path) -> tuple[list[float], int]:
     try:
         with wave.open(str(source), "rb") as handle:
             channels, width, rate, frames = (
-                handle.getnchannels(), handle.getsampwidth(), handle.getframerate(), handle.getnframes()
+                handle.getnchannels(),
+                handle.getsampwidth(),
+                handle.getframerate(),
+                handle.getnframes(),
             )
             if handle.getcomptype() != "NONE" or width not in (1, 2, 3, 4):
-                raise AudioDecodeError("unsupported_wav", source, "only PCM 8/16/24/32-bit WAV is supported")
+                raise AudioDecodeError(
+                    "unsupported_wav", source, "only PCM 8/16/24/32-bit WAV is supported"
+                )
             raw = handle.readframes(frames)
     except AudioDecodeError:
         raise
@@ -51,13 +59,58 @@ def decode_wav_mono_24khz(path: str | Path) -> tuple[list[float], int]:
         if rate != TARGET_RATE:
             raw, _ = audioop.ratecv(raw, width, 1, rate, TARGET_RATE, None)
         scale = float(1 << (width * 8 - 1))
-        values = [audioop.getsample(raw, width, index) / scale for index in range(len(raw) // width)]
+        values = [
+            audioop.getsample(raw, width, index) / scale for index in range(len(raw) // width)
+        ]
     except audioop.error as exc:
         raise AudioDecodeError("decode_failed", source, str(exc)) from exc
     return values, TARGET_RATE
 
 
-def select_segments(samples: list[float], sample_rate: int, window_seconds: float = WINDOW_SECONDS) -> list[Segment]:
+def decode_audio_mono_24khz(
+    path: str | Path, *, ffmpeg: str | None = None
+) -> tuple[list[float], int]:
+    """Decode a supported format with FFmpeg, without importing media packages."""
+    source = Path(path)
+    if source.suffix.lower() == ".wav":
+        return decode_wav_mono_24khz(source)
+    executable = ffmpeg or shutil.which("ffmpeg")
+    if executable is None:
+        raise AudioDecodeError(
+            "ffmpeg_unavailable",
+            source,
+            "install FFmpeg and ensure its executable is on PATH to decode MP3/OGG/FLAC/M4A",
+        )
+    command = [
+        executable,
+        "-v",
+        "error",
+        "-i",
+        str(source),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(TARGET_RATE),
+        "-f",
+        "f32le",
+        "pipe:1",
+    ]
+    try:
+        completed = subprocess.run(command, check=False, capture_output=True)
+    except OSError as exc:
+        raise AudioDecodeError("ffmpeg_failed", source, str(exc)) from exc
+    if completed.returncode:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip() or "FFmpeg failed"
+        raise AudioDecodeError("decode_failed", source, detail)
+    if len(completed.stdout) % 4:
+        raise AudioDecodeError("decode_failed", source, "FFmpeg produced incomplete float32 PCM")
+    return list(struct.unpack(f"<{len(completed.stdout) // 4}f", completed.stdout)), TARGET_RATE
+
+
+def select_segments(
+    samples: list[float], sample_rate: int, window_seconds: float = WINDOW_SECONDS
+) -> list[Segment]:
     """Choose percent-centered windows and one best non-overlapping RMS window."""
     if sample_rate <= 0 or window_seconds <= 0:
         raise ValueError("sample_rate and window_seconds must be positive")
@@ -86,7 +139,10 @@ def select_segments(samples: list[float], sample_rate: int, window_seconds: floa
 
     window = max(1, round(window_seconds * sample_rate))
     candidates = range(0, max(1, len(samples) - window + 1), max(1, sample_rate))
-    best = max(candidates, key=lambda start: sum(value * value for value in samples[start : start + window]))
+    best = max(
+        candidates,
+        key=lambda start: sum(value * value for value in samples[start : start + window]),
+    )
     start, end = bounds((best + window / 2) / sample_rate)
     if not any(max(start, item.start_seconds) < min(end, item.end_seconds) for item in selected):
         selected.append(Segment(start, end, "highest-rms"))

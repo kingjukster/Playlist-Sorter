@@ -12,5 +12,9 @@ def describe_samples(samples: list[float], sample_rate: int) -> dict[str, float]
         return {"duration_seconds": 0.0, "rms": 0.0, "peak": 0.0, "zero_crossing_rate": 0.0}
     rms = math.sqrt(fmean(value * value for value in samples))
     crossings = sum(a * b < 0 for a, b in zip(samples, samples[1:]))
-    return {"duration_seconds": len(samples) / sample_rate, "rms": rms, "peak": max(map(abs, samples)),
-            "zero_crossing_rate": crossings / max(1, len(samples) - 1)}
+    return {
+        "duration_seconds": len(samples) / sample_rate,
+        "rms": rms,
+        "peak": max(map(abs, samples)),
+        "zero_crossing_rate": crossings / max(1, len(samples) - 1),
+    }

@@ -20,10 +20,16 @@ def chunk_lyrics(tokens: Sequence[int], size: int = 384, overlap: int = 64) -> l
     if size <= 0 or not 0 <= overlap < size:
         raise ValueError("require size > 0 and 0 <= overlap < size")
     stride = size - overlap
-    return [list(tokens[index : index + size]) for index in range(0, len(tokens), stride) if tokens[index : index + size]]
+    return [
+        list(tokens[index : index + size])
+        for index in range(0, len(tokens), stride)
+        if tokens[index : index + size]
+    ]
 
 
-def pooled_spherical_mean(vectors: Sequence[Sequence[float]], weights: Sequence[int]) -> list[float]:
+def pooled_spherical_mean(
+    vectors: Sequence[Sequence[float]], weights: Sequence[int]
+) -> list[float]:
     if len(vectors) != len(weights) or not vectors or any(weight <= 0 for weight in weights):
         raise ValueError("vectors and positive token weights are required")
     dims = len(vectors[0])
