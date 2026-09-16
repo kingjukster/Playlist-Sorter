@@ -4,22 +4,23 @@ Playlist Sorter is a local-first Python 3.12 foundation for discovering stable,
 overlapping playlists without modifying source media. The repository implements
 read-only cataloging, versioned contracts, deterministic descriptors and graph
 utilities, guidance policy, evaluation gates, review artifacts, and atomic
-exports. Model-backed feature orchestration and a complete scan-to-export CLI
-pipeline are not implemented or qualified.
+exports. The CLI now runs a complete descriptor-lens scan-to-export pipeline.
+Pinned MuQ/MuLan/Qwen model execution remains an optional, unqualified research
+extension until it is run under the approved WSL2/CUDA resource gates.
 
 ## What works now
 
 The shared service APIs are the current integration surface:
 
 ```text
-audio files -> catalog.scan_library -> deterministic feature/graph/discovery helpers
-            -> canonical run JSON -> review/load services -> previewed atomic export
+audio files -> read-only catalog -> cached descriptors -> stable discovery
+            -> canonical run artifacts -> local review -> atomic derived export
 ```
 
-The redistributable integration test generates WAV bytes, scans them with
-`scan_library`, builds versioned canonical artifacts, loads them through the
-export service, and verifies deterministic export without changing the audio.
-There is no service that automatically connects all of those steps yet.
+The redistributable integration test generates WAV bytes and exercises the real
+scan, feature, discovery, canonical-artifact, and export services without
+changing the audio. Discovery may intentionally abstain when fewer than eight
+songs or insufficiently stable evidence are available.
 
 The Typer interface exposes the frozen command shape:
 
@@ -33,12 +34,10 @@ playlist-sorter export --run <run> --format json|csv|m3u8
 playlist-sorter evaluate --run <run> --benchmark <path>
 ```
 
-Only `doctor` invokes a runtime service. The other advertised commands currently
-emit validated JSON shell records and do **not** scan, build features, discover,
-launch Streamlit, export files, or evaluate a run. Use the Python services and
-tests for implemented behavior; do not treat a successful shell response as a
-completed pipeline stage. Review server helpers are fixed to `127.0.0.1`, but no
-persistent server is launched by the offline checks.
+Each command invokes the corresponding service. `review` launches Streamlit on
+`127.0.0.1` only. `export` writes to `<run>/exports/playlists.<format>` by default
+or an explicit `--output`, after producing the exact preview bytes. Offline tests
+do not launch a persistent server or download model weights.
 
 ## Exact offline quickstart
 
@@ -57,6 +56,7 @@ uv sync --frozen
 uv run pytest -q
 uv run ruff format --check .
 uv run ruff check .
+uv run mypy
 uv run playlist-sorter --help
 ```
 

@@ -17,14 +17,17 @@ candidate, not a release or authorization to scan private music.
 - Generated-audio scan-to-export integration plus metamorphic path/order,
   duplicate-byte, missing-lyrics, corrupt, short-track, and perturbation cases.
 - WSL2/Python 3.12 catalog-only 20/200 gate scripts with local evidence output.
+- Real CLI orchestration for catalog, cached descriptor features, gated discovery,
+  localhost review, previewed export, and leakage-controlled benchmark scoring.
+- Chromaprint-plus-duration musical-variant grouping while preserving SHA-256
+  file identity.
 
 ## Known interface limits
 
-Only the CLI `doctor` command invokes its service. Every other advertised command
-is a JSON-emitting shell. There is no implemented orchestrator from catalog scan
-through canonical feature/discovery artifacts to export. The scanner exposes
-exact duplicates with a shared SHA-256 song ID; alternate encodes are not grouped
-into musical variants by the current catalog service.
+The runnable automatic-discovery MVP currently uses the explicit descriptor
+lens. The pinned MuQ, MuQ-MuLan, and Qwen entries and cache boundaries exist, but
+their heavyweight inference adapters have not been qualified end to end under
+WSL2/CUDA. Parquet/Safetensors writers also remain optional runtime backends.
 
 ## Explicitly unqualified
 

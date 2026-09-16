@@ -10,12 +10,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 import sys
+from typing import cast
 from uuid import uuid4
 
 import streamlit as st
 
-from playlist_sorter.core.contracts import ReviewAction
-from playlist_sorter.export import ExportError, create_preview, write_preview
+from playlist_sorter.core.contracts import ReviewAction, SongRecord
+from playlist_sorter.export import (
+    ExportError,
+    ExportFormat,
+    ExportPreview,
+    create_preview,
+    write_preview,
+)
 from playlist_sorter.naming import explain_candidate, name_candidate
 from playlist_sorter.review import FeedbackStore, load_canonical_run
 
@@ -57,7 +64,7 @@ def _load_run(run_directory: str):
     return load_canonical_run(run_directory)
 
 
-def _display_songs(title: str, song_ids: list[str], songs: dict[str, object]) -> None:
+def _display_songs(title: str, song_ids: list[str], songs: dict[str, SongRecord]) -> None:
     st.subheader(title)
     rows = []
     for song_id in song_ids:
@@ -100,7 +107,7 @@ def _render_feedback(candidate, artifacts, run_directory: str) -> None:
         submitted = st.form_submit_button("Append feedback", type="primary")
     if submitted:
         try:
-            review_action = _action_for(candidate.candidate_id, action, actor, song_id, value)
+            review_action = _action_for(candidate.candidate_id, action, actor, song_id or "", value)
             FeedbackStore(Path(run_directory) / "feedback.jsonl").append(
                 review_action, candidate_ids=artifacts.candidate_ids, song_ids=artifacts.song_ids
             )
@@ -157,19 +164,19 @@ def _render_export(run_directory: str) -> None:
         preview_requested = st.form_submit_button("Create preview")
     if preview_requested:
         try:
-            preview = create_preview(run_directory, format)
+            preview = create_preview(run_directory, cast(ExportFormat, format))
         except ExportError as error:
             st.error(str(error))
             return
         st.session_state["export_preview"] = preview
         st.session_state["export_destination"] = destination
-    preview = st.session_state.get("export_preview")
-    if preview is not None:
-        st.code(preview.text, language="text")
-        st.caption(f"{preview.row_count} rows; SHA-256 {preview.sha256}")
+    state_preview = cast(ExportPreview | None, st.session_state.get("export_preview"))
+    if state_preview is not None:
+        st.code(state_preview.text, language="text")
+        st.caption(f"{state_preview.row_count} rows; SHA-256 {state_preview.sha256}")
         if st.button("Write this preview atomically", type="primary"):
             try:
-                write_preview(preview, st.session_state["export_destination"])
+                write_preview(state_preview, st.session_state["export_destination"])
             except ExportError as error:
                 st.error(str(error))
             else:
@@ -190,6 +197,12 @@ def main(run_directory: str | None = None) -> None:
         st.error(str(error))
         return
     candidate_ids = [candidate.candidate_id for candidate in artifacts.candidates]
+    if not candidate_ids:
+        st.info(
+            "Discovery abstained: this run contains no playlist candidates that passed the gates."
+        )
+        _render_export(supplied_run)
+        return
     candidate_id = st.selectbox("Candidate", candidate_ids)
     candidate = next(item for item in artifacts.candidates if item.candidate_id == candidate_id)
     result = name_candidate(candidate)

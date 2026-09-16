@@ -15,6 +15,7 @@ dependencies = [
   "streamlit==1.64.0",
   "typer==0.21.0",
   "psutil==7.2.2",
+  "PyYAML==6.0.3",
   "tomli==2.4.0; python_version < '3.11'",
 ]
 
@@ -25,6 +26,7 @@ playlist-sorter = "playlist_sorter.cli:main"
 dev = [
   "pytest==9.0.2",
   "ruff==0.14.10",
+  "mypy==1.19.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -36,3 +38,10 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["playlist_sorter"]
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_return_any = false

@@ -2,6 +2,7 @@
 
 from .service import (
     ExportError,
+    ExportFormat,
     ExportPreview,
     create_preview,
     export_run,
@@ -12,6 +13,7 @@ from .service import (
 
 __all__ = [
     "ExportError",
+    "ExportFormat",
     "ExportPreview",
     "create_preview",
     "export_run",

@@ -1,8 +1,10 @@
-"""Small, lazy CLI shells; no pipeline/model modules import at startup."""
+"""Lazy CLI entry points for the local canonical pipeline."""
 
 from __future__ import annotations
 import json
 from pathlib import Path
+import subprocess
+from typing import cast
 import typer
 
 app = typer.Typer(no_args_is_help=True)
@@ -12,57 +14,82 @@ app.add_typer(catalog_app, name="catalog")
 app.add_typer(features_app, name="features")
 
 
-def _shell(command: str, **values: object) -> None:
-    typer.echo(json.dumps({"command": command, **values}, sort_keys=True))
+def _emit(value: object) -> None:
+    typer.echo(json.dumps(value, sort_keys=True, default=str))
 
 
 @app.command()
 def doctor(path: Path = typer.Option(Path("."), "--path")) -> None:
     from .core.runtime import doctor as run_doctor
 
-    typer.echo(json.dumps(run_doctor(path), sort_keys=True))
+    _emit(run_doctor(path))
 
 
 @catalog_app.command("scan")
 def catalog_scan(
     library: Path = typer.Option(..., "--library"), output: Path = typer.Option(..., "--output")
 ) -> None:
-    _shell("catalog scan", library=str(library), output=str(output))
+    from .pipeline import scan_to_run
+
+    _emit(scan_to_run(library, output))
 
 
 @features_app.command("build")
 def features_build(
-    run: str = typer.Option(..., "--run"), profile: str = typer.Option(..., "--profile")
+    run: Path = typer.Option(..., "--run"), profile: str = typer.Option(..., "--profile")
 ) -> None:
-    _shell("features build", run=run, profile=profile)
+    from .pipeline import build_features
+
+    _emit(build_features(run, profile))
 
 
 @app.command()
 def discover(
-    run: str = typer.Option(..., "--run"), guidance: str | None = typer.Option(None, "--guidance")
+    run: Path = typer.Option(..., "--run"),
+    guidance: Path | None = typer.Option(None, "--guidance"),
 ) -> None:
-    _shell("discover", run=run, guidance=guidance)
+    from .pipeline import discover_run
+
+    _emit(discover_run(run, guidance))
 
 
 @app.command()
-def review(run: str = typer.Option(..., "--run")) -> None:
-    _shell("review", run=run)
+def review(run: Path = typer.Option(..., "--run")) -> None:
+    from .review_app import review_server_command
+
+    raise typer.Exit(subprocess.run(review_server_command(str(run)), check=False).returncode)
 
 
 @app.command()
 def export(
-    run: str = typer.Option(..., "--run"), format: str = typer.Option(..., "--format")
+    run: Path = typer.Option(..., "--run"),
+    format: str = typer.Option(..., "--format"),
+    output: Path | None = typer.Option(None, "--output"),
 ) -> None:
     if format not in {"json", "csv", "m3u8"}:
         raise typer.BadParameter("format must be one of: json, csv, m3u8")
-    _shell("export", run=run, format=format)
+    from .export import ExportFormat, export_run
+
+    destination = output or run / "exports" / f"playlists.{format}"
+    preview = export_run(run, cast(ExportFormat, format), destination)
+    _emit(
+        {
+            "destination": str(destination.resolve()),
+            "format": format,
+            "rows": preview.row_count,
+            "sha256": preview.sha256,
+        }
+    )
 
 
 @app.command()
 def evaluate(
-    run: str = typer.Option(..., "--run"), benchmark: str = typer.Option(..., "--benchmark")
+    run: Path = typer.Option(..., "--run"),
+    benchmark: Path = typer.Option(..., "--benchmark"),
 ) -> None:
-    _shell("evaluate", run=run, benchmark=benchmark)
+    from .pipeline import evaluate_run
+
+    _emit(evaluate_run(run, benchmark))
 
 
 def main() -> None:

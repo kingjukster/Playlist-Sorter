@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import struct
 import wave
+import json
 from pathlib import Path
 
-from playlist_sorter.catalog.scan import scan_library
 from playlist_sorter.export import create_preview, export_run
+from playlist_sorter.pipeline import build_features, discover_run, scan_to_run
 
 
 def _write_generated_wav(path: Path, *, samples: tuple[float, ...]) -> Path:
@@ -22,74 +22,39 @@ def _write_generated_wav(path: Path, *, samples: tuple[float, ...]) -> Path:
     return path
 
 
-def _write_canonical_run(run_dir: Path, songs) -> None:
-    run_dir.mkdir()
-    song_items = [
-        {
-            "song_id": song.song_id,
-            "source_path": song.source_path,
-            "title": f"Generated {index}",
-            "artist": "Playlist Sorter fixture",
-            "duration_seconds": song.duration_seconds,
-            "codec": song.codec,
-            "integrity_fingerprint": song.sha256,
-        }
-        for index, song in enumerate(songs, start=1)
-    ]
-    candidate_id = "generated-tones"
-    payloads = {
-        "songs.json": {"schema_version": "1.0", "items": song_items},
-        "playlists.json": {
-            "schema_version": "1.0",
-            "items": [
-                {
-                    "candidate_id": candidate_id,
-                    "name": "Generated tones",
-                    "granularity": "fixture",
-                    "member_song_ids": [song["song_id"] for song in song_items],
-                    "stability": 1.0,
-                    "cohesion": 1.0,
-                    "separation": 1.0,
-                    "novelty": 0.0,
-                    "coverage": 1.0,
-                }
-            ],
-        },
-        "memberships.json": {"schema_version": "1.0", "items": []},
-        "manifest.json": {
-            "schema_version": "1.0",
-            "run_id": "generated-audio-fixture",
-            "created_at": "2026-01-01T00:00:00Z",
-            "discovery_run": "generated-audio-fixture",
-            "artifacts": [],
-            "candidates": [candidate_id],
-            "generator_version": "1.0",
-        },
-    }
-    for filename, payload in payloads.items():
-        (run_dir / filename).write_text(json.dumps(payload), encoding="utf-8")
-
-
 def test_generated_audio_scan_feeds_canonical_export_without_touching_media(tmp_path):
     library = tmp_path / "library"
     first = _write_generated_wav(library / "zeta.wav", samples=(0.1,) * 800)
     second = _write_generated_wav(library / "alpha.wav", samples=(-0.1,) * 400)
     before = {path: path.read_bytes() for path in (first, second)}
 
-    songs, failures = scan_library(library)
-
-    assert not failures
-    assert [Path(song.source_path).name for song in songs] == ["alpha.wav", "zeta.wav"]
-    assert all(song.duration_seconds is not None for song in songs)
-    assert {path: path.read_bytes() for path in (first, second)} == before
-
     run_dir = tmp_path / "canonical-run"
-    _write_canonical_run(run_dir, songs)
+    scan = scan_to_run(library, run_dir)
+    features = build_features(run_dir)
+    song_ids = [
+        item["song_id"] for item in json.loads((run_dir / "songs.json").read_text())["items"]
+    ]
+    guidance = tmp_path / "guidance.yaml"
+    guidance.write_text(
+        json.dumps(
+            {
+                "guidance_id": "generated-guidance",
+                "name": "generated concept",
+                "positive_song_ids": song_ids,
+            }
+        ),
+        encoding="utf-8",
+    )
+    discovery = discover_run(run_dir, guidance)
     preview = create_preview(run_dir, "csv")
     destination = tmp_path / "exports" / "generated.csv"
 
     assert export_run(run_dir, "csv", destination) == preview
     assert destination.read_bytes() == preview.content
-    assert preview.row_count == 2
-    assert "Generated 1" in preview.text
+    assert scan["songs"] == 2
+    assert features["features"] == 2
+    assert discovery["abstained"] is True
+    assert discovery["guidance"] == "generated-guidance"
+    assert preview.row_count == 0
+    assert "playlist_name" in preview.text
     assert {path: path.read_bytes() for path in (first, second)} == before

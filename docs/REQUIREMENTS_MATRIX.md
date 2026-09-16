@@ -15,24 +15,20 @@ shown below. Passing a lower-cost check never upgrades an unrun gate.
 |---|---|---|---|---|
 | r1 | Python 3.12/WSL2 package, lazy CLI, fail-closed doctor and resource safety | `pyproject.toml`, `src/playlist_sorter/cli.py`, `core/runtime.py` | `tests/unit/foundation/test_runtime.py`, CLI help smoke | Implemented and synthetic-validated. Installed WSL/GPU/model environment remains unqualified. |
 | r2 | Versioned public contracts and canonical artifact conventions | `core/contracts.py`, `core/artifacts.py` | `tests/contracts/test_contracts.py` | Implemented and synthetic-validated. No complete producer writes every planned Parquet/Safetensors artifact. |
-| r3 | Read-only catalog, content identity, decode/segment behavior, corrupt/short input handling | `catalog/scan.py`, feature adapters | feature unit tests; `tests/metamorphic/test_catalog_scan_metamorphic.py` | Implemented and synthetic-validated for generated WAV and adapter fixtures. Private formats/library remain unqualified. Alternate encodes are not grouped beyond exact SHA-256 identity. |
+| r3 | Read-only catalog, content identity, decode/segment behavior, corrupt/short input handling | `catalog/scan.py`, feature adapters | feature unit tests; catalog metamorphic and variant tests | Implemented and synthetic-validated for generated WAV and adapter fixtures, including Chromaprint-plus-duration variant grouping. Private formats/library remain unqualified. |
 | r4 | Descriptors, lyrics handling, pinned lazy model adapters, provenance cache and no-inference reruns | `features/`, `configs/models.yaml` | `tests/unit/features/test_feature_pipeline.py` | Deterministic adapters/cache are implemented and synthetic-validated. Actual MuQ/MuLan/Qwen inference, numerical equivalence, and weight licenses in use remain unqualified. |
 | r5 | Separate-lens exact top-k graphs, missing-view fusion, leakage diagnostics, multi-resolution consensus and overlap | `graph/`, `discovery/` | discovery unit tests | Implemented and synthetic-validated, including optional Torch checks from the accepted component stage. Full-library graph quality remains unqualified. |
 | r6 | Guidance limited to 19 unique songs total, constraints, 0.25 guided/0.75 unguided comparison | `guidance/policy.py` | guidance and contract tests; `examples/guidance.example.yaml` | Implemented and synthetic-validated. Guided private held-out NDCG/stability gate remains unqualified. |
-| r7 | Deterministic naming, localhost-only review, provenance feedback, previewed atomic JSON/CSV/M3U8 exports | `naming/`, `review/`, `review_app.py`, `export/service.py` | review/export unit tests and generated scan-to-export integration | Implemented and synthetic-validated. CLI `review`/`export` are shells; no server was launched. |
+| r7 | Deterministic naming, localhost-only review, provenance feedback, previewed atomic JSON/CSV/M3U8 exports | `naming/`, `review/`, `review_app.py`, `export/service.py` | review/export unit tests and generated scan-to-export integration | Implemented and synthetic-validated. CLI review/export invoke the real services; no persistent server was launched during validation. |
 | r8 | Local-first privacy, ignore rules, pinned model/license boundaries, no source mutation or external writes | `.gitignore`, `LICENSE`, `configs/models.yaml`, runtime registry | source-byte invariance and repository diff inspection | Implemented policy and synthetic source-mutation checks. Commercial model profile and streaming writes are out of scope/unqualified. |
 | r9 | Synthetic quality gates, baselines, private-label separation, resource/cache/ANN/full qualification gates | `evaluation/`, `tests/performance/test_evaluation_gates.py` | synthetic ARI/F1 and deterministic gate tests | Gate logic is implemented and synthetic-validated. Private NDCG, 100 blind comparisons, 20/200 operational runs, fresh 10,000-song run, RAM/VRAM/cache-speed, and ANN performance remain unqualified. |
-| r10 | Redistributable integration/metamorphic coverage, safe operational scripts, accurate docs and final combined checks | `tests/integration/`, `tests/metamorphic/`, `scripts/`, `README.md`, `docs/` | final stage check evidence | Implemented and synthetic-validated only to the checks recorded for the final commit. The missing CLI/service orchestration remains an explicit interface gap. |
+| r10 | Redistributable integration/metamorphic coverage, safe operational scripts, accurate docs and final combined checks | `pipeline/`, `tests/integration/`, `tests/metamorphic/`, `scripts/`, `README.md`, `docs/` | real scan-to-export integration and final combined checks | Implemented and synthetic-validated for the descriptor MVP. Model-backed and private/full-scale qualification remains open. |
 
-## CLI/service mismatch
+## CLI/service boundary
 
-`playlist-sorter doctor` invokes `core.runtime.doctor`. `catalog scan`, `features
-build`, `discover`, `review`, `export`, and `evaluate` validate arguments and emit
-JSON through `_shell`; they do not call the implemented scanner, feature,
-discovery, review, export, or evaluation services. The integration test therefore
-uses the real Python APIs directly and explicitly constructs the canonical JSON
-boundary between scan and export. No source edit was authorized in this stage to
-close that mismatch.
+All advertised commands now call shared services. The generated-audio integration
+test uses those same services and validates the canonical boundary. Review stays
+localhost-only, exports are derived writes, and source audio remains read-only.
 
 ## Frozen numeric gates
 

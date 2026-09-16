@@ -7,8 +7,8 @@ Approved on 2026-09-15 for implementation in `kingjukster/Playlist-Sorter`.
 The combined foundation/features/discovery/review-export snapshot is implemented at
 `08aad41cdbbd7a2804bf7f3ab2df936d9d9316a8`. Offline unit, contract, performance,
 integration, and metamorphic checks exercise deterministic services and generated
-fixtures. The Typer commands other than `doctor` remain JSON-emitting shells and do
-not orchestrate those services. Model weights/inference, private labels or libraries,
+fixtures. The Typer commands now orchestrate the descriptor-only automatic-discovery
+MVP through canonical artifacts. Model weights/inference, private labels or libraries,
 the 20/200 operational scripts on user data, the 10,000-song run, and blind human
 preference gates remain explicitly unqualified. This document is the frozen validated
 plan, not a claim that every planned runtime path is complete.

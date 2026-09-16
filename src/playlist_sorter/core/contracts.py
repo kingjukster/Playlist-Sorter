@@ -2,14 +2,14 @@
 
 from datetime import datetime
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION = "1.0"
 
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=False)
-    schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
+    schema_version: Literal["1.0"] = "1.0"
 
 
 class SongRecord(Contract):
@@ -32,6 +32,7 @@ class SongRecord(Contract):
     file_size: int | None = Field(default=None, ge=0)
     modified_at: datetime | None = None
     integrity_fingerprint: str
+    variant_group_id: str | None = None
     preprocessing_state: str = "pending"
     error: str | None = None
 
@@ -117,10 +118,17 @@ class GuidanceSet(Contract):
 class Membership(Contract):
     song_id: str
     candidate_id: str
-    score: float = Field(ge=0, le=1)
+    membership_score: float = Field(
+        ge=0, le=1, validation_alias=AliasChoices("membership_score", "score")
+    )
     threshold: float = Field(ge=0, le=1)
     status: Literal["member", "abstained", "excluded"] = "member"
     reason: str | None = None
+
+    @property
+    def score(self) -> float:
+        """Compatibility accessor; serialized artifacts use membership_score."""
+        return self.membership_score
 
 
 class PlaylistCandidate(Contract):

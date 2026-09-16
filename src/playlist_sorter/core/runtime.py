@@ -8,7 +8,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from typing import Callable
+from typing import Any, Callable
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ class ResourceSnapshot:
     contention: bool = False
 
 
-def _vram_from_nvidia_smi(runner: Callable[..., object] = subprocess.run) -> float | None:
+def _vram_from_nvidia_smi(runner: Callable[..., Any] = subprocess.run) -> float | None:
     """Read free VRAM without importing torch or initializing CUDA."""
     try:
         result = runner(
