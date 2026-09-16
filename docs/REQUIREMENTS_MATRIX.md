@@ -8,8 +8,9 @@ Statuses are deliberately distinct:
 - **Unqualified** means the required private, model-backed, full-scale, or human
   evidence was not authorized or produced.
 
-The campaign grouped the frozen plan into requirements `r1` through `r10` as
-shown below. Passing a lower-cost check never upgrades an unrun gate.
+The campaign grouped the frozen plan into requirements `r1` through `r10`; `r11`
+records the later approved acquisition extension. Passing a lower-cost check
+never upgrades an unrun gate.
 
 | ID | Frozen requirement | Code and artifacts | Test/evidence | Status and remaining gate |
 |---|---|---|---|---|
@@ -23,6 +24,7 @@ shown below. Passing a lower-cost check never upgrades an unrun gate.
 | r8 | Local-first privacy, ignore rules, pinned model/license boundaries, no source mutation or external writes | `.gitignore`, `LICENSE`, `configs/models.yaml`, runtime registry | source-byte invariance and repository diff inspection | Implemented policy and synthetic source-mutation checks. Commercial model profile and streaming writes are out of scope/unqualified. |
 | r9 | Synthetic quality gates, baselines, private-label separation, resource/cache/ANN/full qualification gates | `evaluation/`, `tests/performance/test_evaluation_gates.py` | synthetic ARI/F1 and deterministic gate tests | Gate logic is implemented and synthetic-validated. Private NDCG, 100 blind comparisons, 20/200 operational runs, fresh 10,000-song run, RAM/VRAM/cache-speed, and ANN performance remain unqualified. |
 | r10 | Redistributable integration/metamorphic coverage, safe operational scripts, accurate docs and final combined checks | `pipeline/`, `tests/integration/`, `tests/metamorphic/`, `scripts/`, `README.md`, `docs/` | real scan-to-export integration and final combined checks | Implemented and synthetic-validated for the descriptor MVP. Model-backed and private/full-scale qualification remains open. |
+| r11 | Optional acquisition of explicitly authorized individual YouTube videos without search, authentication, cookies, playlists, or bypasses | `acquisition/`, `examples/youtube_manifest.example.yaml` | strict manifest, command-policy, receipt, and idempotence tests | Implemented and synthetic-validated. No live video was downloaded during validation. |
 
 ## CLI/service boundary
 

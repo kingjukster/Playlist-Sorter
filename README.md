@@ -26,6 +26,7 @@ The Typer interface exposes the frozen command shape:
 
 ```bash
 playlist-sorter doctor --path <output-root>
+playlist-sorter acquire youtube --manifest <yaml|json|csv> --output <directory>
 playlist-sorter catalog scan --library <path> --output <run>
 playlist-sorter features build --run <run> --profile research
 playlist-sorter discover --run <run> [--guidance <yaml>]
@@ -38,6 +39,32 @@ Each command invokes the corresponding service. `review` launches Streamlit on
 `127.0.0.1` only. `export` writes to `<run>/exports/playlists.<format>` by default
 or an explicit `--output`, after producing the exact preview bytes. Offline tests
 do not launch a persistent server or download model weights.
+
+## Authorized YouTube acquisition
+
+The optional acquisition command accepts only explicit individual YouTube URLs
+that you are authorized to download. Every item must set `rights_basis`, explain
+the basis in `rights_note`, and set `authorization_confirmed: true`. Playlist or
+mix URLs, non-YouTube hosts, unknown fields, and missing declarations fail
+closed. The wrapper disables inherited yt-dlp configuration, playlists, and
+remote components; it never searches, imports cookies, logs in, or bypasses DRM
+or geographic restrictions.
+
+Copy `examples/youtube_manifest.example.yaml` outside the repository, fill it
+with authorized URLs, then run under WSL2 after installing FFmpeg:
+
+```bash
+uv run playlist-sorter acquire youtube \
+  --manifest "$HOME/private/muy-fuego-authorized.yaml" \
+  --output "$HOME/.local/share/playlist-sorter/acquired/muy-fuego" \
+  --audio-format flac
+```
+
+The output contains `media/`, the yt-dlp archive, resolved manifest, exact
+commands, append-only receipts, SHA-256 values, and JSON/Markdown run summaries.
+An unchanged verified rerun skips completed files. Feed the resulting `media/`
+directory to `catalog scan`. Acquisition outputs and private manifests must stay
+outside Git.
 
 ## Exact offline quickstart
 

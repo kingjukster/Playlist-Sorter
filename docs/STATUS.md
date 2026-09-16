@@ -21,6 +21,9 @@ candidate, not a release or authorization to scan private music.
   localhost review, previewed export, and leakage-controlled benchmark scoring.
 - Chromaprint-plus-duration musical-variant grouping while preserving SHA-256
   file identity.
+- Rights-aware, manifest-driven YouTube acquisition for individually authorized
+  videos, with yt-dlp/FFmpeg provenance, SHA-256 receipts, and verified rerun
+  skips. Search, playlists, authentication, cookies, and bypasses are excluded.
 
 ## Known interface limits
 
@@ -38,6 +41,7 @@ WSL2/CUDA. Parquet/Safetensors writers also remain optional runtime backends.
 - fresh 10,000-song time/RAM/VRAM/cache/ANN qualification;
 - guided private held-out evaluation and 100 blind human comparisons;
 - streaming-service writes, deployment, release, or commercial use.
+- live YouTube acquisition; automated tests use a synthetic downloader boundary.
 
 Unavailable telemetry is recorded as `null`/`unknown`, never guessed or treated
 as zero. No persistent server, model weight, private scan, or external write is

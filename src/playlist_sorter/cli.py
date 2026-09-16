@@ -10,8 +10,10 @@ import typer
 app = typer.Typer(no_args_is_help=True)
 catalog_app = typer.Typer(no_args_is_help=True)
 features_app = typer.Typer(no_args_is_help=True)
+acquire_app = typer.Typer(no_args_is_help=True)
 app.add_typer(catalog_app, name="catalog")
 app.add_typer(features_app, name="features")
+app.add_typer(acquire_app, name="acquire")
 
 
 def _emit(value: object) -> None:
@@ -41,6 +43,24 @@ def features_build(
     from .pipeline import build_features
 
     _emit(build_features(run, profile))
+
+
+@acquire_app.command("youtube")
+def acquire_youtube(
+    manifest: Path = typer.Option(..., "--manifest"),
+    output: Path = typer.Option(..., "--output"),
+    audio_format: str = typer.Option("flac", "--audio-format"),
+) -> None:
+    from .acquisition import SUPPORTED_AUDIO_FORMATS, acquire_youtube_audio
+
+    if audio_format not in SUPPORTED_AUDIO_FORMATS:
+        raise typer.BadParameter(
+            f"audio format must be one of: {', '.join(SUPPORTED_AUDIO_FORMATS)}"
+        )
+    result = acquire_youtube_audio(manifest, output, audio_format=audio_format)
+    _emit(result)
+    if result["failed"]:
+        raise typer.Exit(1)
 
 
 @app.command()
