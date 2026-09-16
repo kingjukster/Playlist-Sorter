@@ -110,7 +110,15 @@ def _json_bytes(rows: list[dict[str, Any]]) -> bytes:
 
 def _csv_bytes(rows: list[dict[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
-    fields = ["candidate_id", "playlist_name", "song_id", "source_path", "title", "artist", "duration_seconds"]
+    fields = [
+        "candidate_id",
+        "playlist_name",
+        "song_id",
+        "source_path",
+        "title",
+        "artist",
+        "duration_seconds",
+    ]
     writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n", extrasaction="raise")
     writer.writeheader()
     writer.writerows(rows)
@@ -150,7 +158,9 @@ def write_preview(preview: ExportPreview, destination: str | Path) -> Path:
     if output.name in {"", "."} or output.exists() and output.is_dir():
         raise ExportError("destination must be a file path")
     output.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent
+    )
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as handle:

@@ -70,7 +70,9 @@ def _display_songs(title: str, song_ids: list[str], songs: dict[str, object]) ->
         st.caption("None")
 
 
-def _action_for(candidate_id: str, action: str, actor: str, song_id: str, value: str) -> ReviewAction:
+def _action_for(
+    candidate_id: str, action: str, actor: str, song_id: str, value: str
+) -> ReviewAction:
     payload: dict[str, object] = {
         "action_id": str(uuid4()),
         "candidate_id": candidate_id,
@@ -91,7 +93,9 @@ def _render_feedback(candidate, artifacts, run_directory: str) -> None:
     with st.form(f"feedback-{candidate.candidate_id}"):
         actor = st.text_input("Reviewer", value="local-reviewer")
         action = st.selectbox("Action", SUPPORTED_ACTIONS)
-        song_id = st.selectbox("Song for intrusion or omission", [""] + list(candidate.member_song_ids))
+        song_id = st.selectbox(
+            "Song for intrusion or omission", [""] + list(candidate.member_song_ids)
+        )
         value = st.text_input("Name or target candidate IDs for rename, split, or merge")
         submitted = st.form_submit_button("Append feedback", type="primary")
     if submitted:
@@ -122,23 +126,34 @@ def _render_blind_comparison(candidates, artifacts, run_directory: str) -> None:
             st.info("No preference was recorded.")
         else:
             action = ReviewAction(
-                action_id=str(uuid4()), candidate_id=selection.candidate_id, action="approve",
-                actor="local-reviewer", created_at=datetime.now(UTC),
-                provenance={"surface": "streamlit-review", "blind_comparison": True, "choice": choice},
+                action_id=str(uuid4()),
+                candidate_id=selection.candidate_id,
+                action="approve",
+                actor="local-reviewer",
+                created_at=datetime.now(UTC),
+                provenance={
+                    "surface": "streamlit-review",
+                    "blind_comparison": True,
+                    "choice": choice,
+                },
             )
             FeedbackStore(Path(run_directory) / "feedback.jsonl").append(
                 action, candidate_ids=artifacts.candidate_ids, song_ids=artifacts.song_ids
             )
             st.success(f"Selected {choice}; blind comparison feedback appended durably.")
     for label, candidate in (("A", left), ("B", right)):
-        st.caption(f"{label}: {len(candidate.member_song_ids)} songs, {candidate.granularity} grouping")
+        st.caption(
+            f"{label}: {len(candidate.member_song_ids)} songs, {candidate.granularity} grouping"
+        )
 
 
 def _render_export(run_directory: str) -> None:
     st.subheader("Preview export")
     with st.form("export-preview"):
         format = st.selectbox("Format", ["json", "csv", "m3u8"])
-        destination = st.text_input("Derived export destination", value=str(Path(run_directory) / f"preview.{format}"))
+        destination = st.text_input(
+            "Derived export destination", value=str(Path(run_directory) / f"preview.{format}")
+        )
         preview_requested = st.form_submit_button("Create preview")
     if preview_requested:
         try:
@@ -181,7 +196,11 @@ def main(run_directory: str | None = None) -> None:
     st.header(result.name)
     st.caption(explain_candidate(candidate))
     songs = {song.song_id: song for song in artifacts.songs}
-    _display_songs("Representative evidence", candidate.representative_song_ids or candidate.core_song_ids, songs)
+    _display_songs(
+        "Representative evidence",
+        candidate.representative_song_ids or candidate.core_song_ids,
+        songs,
+    )
     _display_songs("Borderline evidence", candidate.boundary_song_ids, songs)
     _display_songs("Rejected evidence", candidate.excluded_song_ids, songs)
     _render_blind_comparison(artifacts.candidates, artifacts, supplied_run)

@@ -124,12 +124,16 @@ def test_review_action_rejects_invalid_payloads(action, payload):
 def test_feedback_is_append_only_and_strict(tmp_path):
     store = FeedbackStore(tmp_path / "feedback.jsonl")
     store.append(_action("approve"), candidate_ids={"cand-1"}, song_ids={"song-1"})
-    store.append(_action("intrusion", song_id="song-1"), candidate_ids={"cand-1"}, song_ids={"song-1"})
+    store.append(
+        _action("intrusion", song_id="song-1"), candidate_ids={"cand-1"}, song_ids={"song-1"}
+    )
     assert [item.action for item in store.read()] == ["approve", "intrusion"]
     assert len((tmp_path / "feedback.jsonl").read_text(encoding="utf-8").splitlines()) == 2
     with pytest.raises(ValueError, match="unknown candidate"):
         store.append(_action("approve"), candidate_ids={"other"})
-    store.path.write_text(_action("approve", song_id="song-1").model_dump_json() + "\n", encoding="utf-8")
+    store.path.write_text(
+        _action("approve", song_id="song-1").model_dump_json() + "\n", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="invalid feedback"):
         store.read()
     (tmp_path / "feedback.jsonl").write_text("not-json\n", encoding="utf-8")
