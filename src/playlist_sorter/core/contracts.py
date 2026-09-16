@@ -1,15 +1,59 @@
 """Stable, JSON-friendly data contracts for Playlist Sorter."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCHEMA_VERSION = "1.0"
 
 
+class FeatureProfile(str, Enum):
+    """Explicit feature execution profiles; unknown values are never coerced."""
+
+    DESCRIPTORS = "descriptors"
+    RESEARCH = "research"
+
+    @property
+    def requires_model_backed_features(self) -> bool:
+        return self is FeatureProfile.RESEARCH
+
+    @property
+    def descriptors(self) -> bool:
+        return self is FeatureProfile.DESCRIPTORS
+
+
+def parse_feature_profile(value: str) -> FeatureProfile:
+    """Parse one exact supported profile name without normalization."""
+    if not isinstance(value, str):
+        raise ValueError("feature profile must be an exact supported string")
+    try:
+        return FeatureProfile(value)
+    except ValueError as exc:
+        raise ValueError(f"unsupported feature profile: {value!r}") from exc
+
+
 class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=False)
     schema_version: Literal["1.0"] = "1.0"
+
+
+class AcquisitionProvenance(Contract):
+    """Verified metadata carried from an explicitly authorized acquisition."""
+
+    acquisition_id: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    title: str | None = None
+    artist: str | None = None
+    source: str = Field(min_length=1)
+
+    @field_validator("acquisition_id", "url", "source", "title", "artist")
+    @classmethod
+    def nonblank_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("text fields must not be blank")
+        return value
 
 
 class SongRecord(Contract):
@@ -33,6 +77,7 @@ class SongRecord(Contract):
     modified_at: datetime | None = None
     integrity_fingerprint: str
     variant_group_id: str | None = None
+    acquisition: AcquisitionProvenance | None = None
     preprocessing_state: str = "pending"
     error: str | None = None
 

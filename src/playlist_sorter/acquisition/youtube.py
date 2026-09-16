@@ -125,6 +125,11 @@ def load_acquisition_manifest(path: str | Path) -> AcquisitionManifest:
 
 
 def _download_id(url: str) -> str:
+    return acquisition_id(url)
+
+
+def acquisition_id(url: str) -> str:
+    """Return the stable local identity used for one authorized source URL."""
     return f"youtube-{hashlib.sha256(url.encode()).hexdigest()[:16]}"
 
 
@@ -285,6 +290,7 @@ def acquire_youtube_audio(
             continue
         receipt = {
             "at": datetime.now(UTC),
+            "acquisition_id": acquisition_id(entry.url),
             "audio_format": audio_format,
             "authorization_confirmed": True,
             "download_id": download_id,
@@ -293,6 +299,9 @@ def acquire_youtube_audio(
             "rights_note": entry.rights_note,
             "sha256": _sha256(target),
             "source_info": str(media / f"{download_id}.info.json"),
+            "source": "youtube",
+            "title": entry.title,
+            "artist": entry.artist,
             "status": "completed",
             "url": entry.url,
         }

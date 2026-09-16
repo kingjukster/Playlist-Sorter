@@ -4,7 +4,108 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
+
+
+_REQUIRED_PROVENANCE_KEYS = {
+    "model_repository",
+    "model_revision",
+    "preprocessing",
+    "pooling",
+    "feature_view",
+}
+_SOURCE_PROVENANCE_KEYS = {"source_fingerprint", "source_sha256"}
+_OPTIONAL_PROVENANCE_KEYS = {"segment_id"}
+
+
+def _json_value(value: Any, *, field: str) -> Any:
+    """Return a JSON-compatible copy, rejecting lossy or ambiguous values."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError(f"{field} cannot contain a non-finite float")
+        return value
+    if isinstance(value, list):
+        return [_json_value(item, field=field) for item in value]
+    if isinstance(value, Mapping):
+        if not all(isinstance(key, str) for key in value):
+            raise TypeError(f"{field} mapping keys must be strings")
+        return {key: _json_value(item, field=field) for key, item in value.items()}
+    raise TypeError(f"{field} must contain only JSON values")
+
+
+def validate_embedding_provenance(provenance: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and copy the complete, canonical embedding cache identity.
+
+    Canonical records identify source bytes, the pinned model, preprocessing,
+    pooling, and the resulting feature view.  ``segment_id`` optionally
+    distinguishes a segment vector from a pooled vector.  Generic cache users
+    may continue to use :class:`EmbeddingCache` directly with their own
+    provenance dictionaries; this validator is the fail-closed r5 boundary.
+    """
+    if not isinstance(provenance, Mapping):
+        raise TypeError("embedding provenance must be a mapping")
+    if not all(isinstance(key, str) for key in provenance):
+        raise TypeError("embedding provenance keys must be strings")
+
+    keys = set(provenance)
+    allowed = _REQUIRED_PROVENANCE_KEYS | _SOURCE_PROVENANCE_KEYS | _OPTIONAL_PROVENANCE_KEYS
+    missing = _REQUIRED_PROVENANCE_KEYS - keys
+    unknown = keys - allowed
+    sources = keys & _SOURCE_PROVENANCE_KEYS
+    if missing or unknown or len(sources) != 1:
+        details = []
+        if missing:
+            details.append(f"missing {sorted(missing)}")
+        if unknown:
+            details.append(f"unknown {sorted(unknown)}")
+        if len(sources) != 1:
+            details.append("exactly one of source_fingerprint or source_sha256 is required")
+        raise ValueError("invalid embedding provenance: " + "; ".join(details))
+
+    result = _json_value(provenance, field="embedding provenance")
+    assert isinstance(result, dict)
+    for field in (*sources, "model_repository", "model_revision", "feature_view"):
+        if not isinstance(result[field], str) or not result[field]:
+            raise TypeError(f"{field} must be a non-empty string")
+    if "segment_id" in result and (
+        not isinstance(result["segment_id"], str) or not result["segment_id"]
+    ):
+        raise TypeError("segment_id must be a non-empty string when supplied")
+    for field in ("preprocessing", "pooling"):
+        if not isinstance(result[field], dict):
+            raise TypeError(f"{field} must be a mapping")
+    return result
+
+
+def embedding_provenance(
+    *,
+    source_fingerprint: str | None = None,
+    source_sha256: str | None = None,
+    model_repository: str,
+    model_revision: str,
+    preprocessing: Mapping[str, Any],
+    pooling: Mapping[str, Any],
+    feature_view: str,
+    segment_id: str | None = None,
+) -> dict[str, Any]:
+    """Build a validated canonical embedding cache provenance record."""
+    provenance: dict[str, Any] = {
+        "model_repository": model_repository,
+        "model_revision": model_revision,
+        "preprocessing": preprocessing,
+        "pooling": pooling,
+        "feature_view": feature_view,
+    }
+    if source_fingerprint is not None:
+        provenance["source_fingerprint"] = source_fingerprint
+    if source_sha256 is not None:
+        provenance["source_sha256"] = source_sha256
+    if segment_id is not None:
+        provenance["segment_id"] = segment_id
+    return validate_embedding_provenance(provenance)
 
 
 def cache_key(provenance: dict[str, Any]) -> str:

@@ -9,6 +9,7 @@ import pytest
 from playlist_sorter.acquisition import (
     AcquisitionEntry,
     AcquisitionError,
+    acquisition_id,
     acquire_youtube_audio,
     build_ytdlp_command,
     load_acquisition_manifest,
@@ -66,8 +67,22 @@ def test_command_disables_config_auth_adjacent_and_playlist_behavior(tmp_path):
     assert command[-1] == URL
 
 
+def test_acquisition_id_is_stable_and_matches_the_download_filename(tmp_path):
+    entry = AcquisitionEntry(
+        url=URL,
+        rights_basis="owned",
+        rights_note="Original recording owned by the user.",
+        authorization_confirmed=True,
+    )
+
+    command = build_ytdlp_command(entry, output_dir=tmp_path, audio_format="flac")
+
+    assert acquisition_id(URL) == "youtube-cfb326a281a3cc82"
+    assert f"{acquisition_id(URL)}.%(ext)s" in command[command.index("--output") + 1]
+
+
 def test_acquisition_writes_receipt_and_verified_rerun_skips(tmp_path):
-    manifest = _write_manifest(tmp_path / "manifest.json")
+    manifest = _write_manifest(tmp_path / "manifest.json", title="Fixture", artist="Tester")
     output = tmp_path / "output"
     calls: list[tuple[str, ...]] = []
 
@@ -91,7 +106,11 @@ def test_acquisition_writes_receipt_and_verified_rerun_skips(tmp_path):
     assert len(calls) == 1
     receipt = json.loads((output / "receipts.jsonl").read_text(encoding="utf-8"))
     assert receipt["authorization_confirmed"] is True
+    assert receipt["acquisition_id"] == acquisition_id(URL)
     assert receipt["rights_basis"] == "permission"
+    assert receipt["source"] == "youtube"
+    assert receipt["title"] == "Fixture"
+    assert receipt["artist"] == "Tester"
     assert len(receipt["sha256"]) == 64
     assert (output / "commands.jsonl").is_file()
     assert (output / "run_summary.md").is_file()

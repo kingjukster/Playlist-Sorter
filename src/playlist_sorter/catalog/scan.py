@@ -8,7 +8,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from typing import Any, Mapping
 import wave
+
+from pydantic import ValidationError
+
+from playlist_sorter.acquisition import acquisition_id
+from playlist_sorter.core.contracts import AcquisitionProvenance, SongRecord
 
 SUPPORTED_EXTENSIONS = frozenset({".mp3", ".ogg", ".flac", ".wav", ".m4a"})
 
@@ -32,6 +38,76 @@ class CatalogSong:
     chromaprint: str | None = None
     chromaprint_status: str = "not_attempted"
     variant_group_id: str = ""
+
+
+def resolve_acquisition_provenance(
+    song: CatalogSong,
+    acquisition_records: Mapping[str, AcquisitionProvenance | Mapping[str, Any]] | None,
+) -> AcquisitionProvenance | None:
+    """Return provenance only for an exact acquisition filename and byte match.
+
+    Acquisition metadata is intentionally not guessed from a URL, tag, or a
+    near match. A catalog file must retain the deterministic acquisition ID in
+    its filename and have the receipt's exact SHA-256.
+    """
+    if acquisition_records is None:
+        return None
+    acquisition_key = Path(song.source_path).stem
+    record = acquisition_records.get(acquisition_key)
+    if record is None:
+        return None
+    try:
+        provenance = (
+            record
+            if isinstance(record, AcquisitionProvenance)
+            else AcquisitionProvenance.model_validate(
+                {
+                    "acquisition_id": record.get("acquisition_id"),
+                    "url": record.get("url"),
+                    "source_sha256": record.get("source_sha256", record.get("sha256")),
+                    "title": record.get("title"),
+                    "artist": record.get("artist"),
+                    "source": record.get("source", "youtube"),
+                }
+            )
+        )
+    except (AttributeError, TypeError, ValidationError):
+        return None
+    if (
+        provenance.acquisition_id != acquisition_key
+        or provenance.acquisition_id not in acquisition_records
+        or provenance.acquisition_id != acquisition_id(provenance.url)
+        or provenance.source_sha256 != song.sha256
+    ):
+        return None
+    return provenance
+
+
+def map_catalog_song(
+    song: CatalogSong,
+    acquisition_records: Mapping[str, AcquisitionProvenance | Mapping[str, Any]] | None = None,
+) -> SongRecord:
+    """Map an immutable catalog row to the public song contract fail-closed."""
+    provenance = resolve_acquisition_provenance(song, acquisition_records)
+    metadata = song.metadata
+    return SongRecord(
+        song_id=song.song_id,
+        source_path=song.source_path,
+        title=provenance.title if provenance and provenance.title else "",
+        artist=provenance.artist if provenance and provenance.artist else "",
+        duration_seconds=song.duration_seconds,
+        codec=song.codec,
+        sample_rate=(
+            int(metadata["sample_rate"])
+            if metadata.get("sample_rate", "").isdigit()
+            else None
+        ),
+        channels=(int(metadata["channels"]) if metadata.get("channels", "").isdigit() else None),
+        file_size=song.size_bytes,
+        integrity_fingerprint=song.sha256,
+        variant_group_id=song.variant_group_id or None,
+        acquisition=provenance,
+    )
 
 
 def _sha256(path: Path) -> str:
