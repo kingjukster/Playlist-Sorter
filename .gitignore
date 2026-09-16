@@ -15,23 +15,23 @@ dist/
 !.env.example
 *.pem
 *.key
-secrets/
-private/
-data/raw/
-data/exports/
-audio/
-lyrics/
-runs/
-feedback/
-embeddings/
-cache/
+/secrets/
+/private/
+/data/raw/
+/data/exports/
+/audio/
+/lyrics/
+/runs/
+/feedback/
+/embeddings/
+/cache/
 *.sqlite3
 *.db
 
 # Model weights, caches, and generated downloads (never version)
-models/
-checkpoints/
-weights/
+/models/
+/checkpoints/
+/weights/
 *.safetensors
 *.ckpt
 *.pt
