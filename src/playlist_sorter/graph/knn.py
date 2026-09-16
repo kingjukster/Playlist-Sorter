@@ -82,13 +82,58 @@ def build_multi_lens_graphs(
     if unknown:
         raise ValueError(f"unsupported views: {sorted(unknown)}")
     views = {
-        name: build_view_graph(name, song_ids, vectors, k=k, block_size=block_size, device=device)
+        name: _build_sparse_view_graph(
+            name, song_ids, vectors, k=k, block_size=block_size, device=device
+        )
         for name, vectors in vectors_by_view.items()
         if vectors is not None
     }
     if not views:
         raise ValueError("at least one non-missing modality is required")
     return {**views, "fused": fuse_view_graphs(views.values(), weights=weights)}
+
+
+def _build_sparse_view_graph(
+    view: str,
+    song_ids: Sequence[str],
+    vectors,
+    *,
+    k: int,
+    block_size: int,
+    device: str | None,
+) -> ViewGraph:
+    """Build a graph without inventing a vector for songs missing this view.
+
+    A view can be absent for individual songs (most commonly lyrics).  The
+    resulting graph retains the global song ordering but has no incident edges
+    for those songs, so late fusion renormalizes only evidence actually present
+    for a comparison.
+    """
+    try:
+        rows = list(vectors)
+    except TypeError:
+        return build_view_graph(view, song_ids, vectors, k=k, block_size=block_size, device=device)
+    if len(rows) != len(song_ids):
+        # Tensor-like matrices do not need sparse handling; preserve the normal
+        # shape error from build_view_graph for genuinely mismatched input.
+        return build_view_graph(view, song_ids, vectors, k=k, block_size=block_size, device=device)
+    present = [index for index, row in enumerate(rows) if row is not None]
+    if len(present) == len(rows):
+        return build_view_graph(view, song_ids, vectors, k=k, block_size=block_size, device=device)
+    if len(present) < 2:
+        return ViewGraph(view, tuple(song_ids), {}, 0, str(_device(device)))
+    compact = build_view_graph(
+        view,
+        [song_ids[index] for index in present],
+        [rows[index] for index in present],
+        k=k,
+        block_size=block_size,
+        device=device,
+    )
+    edges = {
+        (present[left], present[right]): score for (left, right), score in compact.edges.items()
+    }
+    return ViewGraph(view, tuple(song_ids), edges, compact.k, compact.device)
 
 
 def exact_cosine_topk(

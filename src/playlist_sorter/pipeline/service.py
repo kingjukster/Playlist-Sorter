@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+from statistics import median
 import tempfile
 from time import perf_counter
 from typing import Any, Iterable
@@ -35,11 +36,19 @@ from playlist_sorter.discovery import (
     SeededLeidenBackend,
     community_consensus,
     default_perturbations,
+    passes_candidate_gates,
     select_candidates,
 )
 from playlist_sorter.evaluation import ndcg_at_k, precision_at_k
 from playlist_sorter.embeddings import EmbeddingCache, adapter_for
 from playlist_sorter.features import describe_samples
+from playlist_sorter.graph import (
+    K_VARIANTS,
+    FusedGraph,
+    ViewGraph,
+    build_multi_lens_graphs,
+    fuse_view_graphs,
+)
 from playlist_sorter.guidance import apply_guidance, validate_guidance
 
 GENERATOR_VERSION = "0.1.0"
@@ -361,12 +370,14 @@ def _edges(vectors: list[list[float]], k: int = 30) -> dict[tuple[int, int], flo
     return edges
 
 
-def _communities(song_ids: list[str], labels: tuple[int, ...], prefix: str) -> list[Community]:
+def _communities(
+    song_ids: list[str], labels: tuple[int, ...], prefix: str, lens: str = "descriptors"
+) -> list[Community]:
     grouped: dict[int, set[str]] = defaultdict(set)
     for song_id, label in zip(song_ids, labels, strict=True):
         grouped[label].add(song_id)
     return [
-        Community(f"{prefix}-{label}", frozenset(members), "descriptors")
+        Community(f"{prefix}-{label}", frozenset(members), lens)
         for label, members in sorted(grouped.items())
     ]
 
@@ -378,6 +389,70 @@ def _granularity(size: int, total: int) -> str:
     if fraction <= 0.10:
         return "medium"
     return "broad"
+
+
+def _standardize_sparse(rows: list[list[float] | None]) -> list[list[float] | None]:
+    present = [row for row in rows if row is not None]
+    standardized = iter(_standardize(present))
+    return [next(standardized) if row is not None else None for row in rows]
+
+
+def _discovery_graphs(
+    song_ids: list[str],
+    vectors_by_lens: dict[str, list[list[float] | None]],
+    *,
+    k: int,
+) -> dict[str, ViewGraph | FusedGraph]:
+    if set(vectors_by_lens) == {"descriptors"}:
+        descriptor_rows = vectors_by_lens["descriptors"]
+        if all(row is not None for row in descriptor_rows):
+            edges = _edges([row for row in descriptor_rows if row is not None], k=k)
+            descriptor_only_graph = ViewGraph("descriptors", tuple(song_ids), edges, k, "cpu")
+            return {
+                "descriptors": descriptor_only_graph,
+                "fused": FusedGraph(
+                    tuple(song_ids),
+                    dict(edges),
+                    {edge: {"descriptors": score} for edge, score in edges.items()},
+                    {edge: 0.15 for edge in edges},
+                ),
+            }
+    graphs = build_multi_lens_graphs(song_ids, vectors_by_lens, k=k)
+    descriptor_graph = graphs.get("descriptors")
+    if isinstance(descriptor_graph, ViewGraph):
+        # Preserve the original descriptor pipeline's [0, 1] cosine scale.
+        descriptor_graph = ViewGraph(
+            descriptor_graph.view,
+            descriptor_graph.song_ids,
+            {edge: (score + 1.0) / 2.0 for edge, score in descriptor_graph.edges.items()},
+            descriptor_graph.k,
+            descriptor_graph.device,
+        )
+        base = {
+            name: graph
+            for name, graph in graphs.items()
+            if name != "fused" and isinstance(graph, ViewGraph)
+        }
+        base["descriptors"] = descriptor_graph
+        graphs = {**base, "fused": fuse_view_graphs(base.values())}
+    return graphs
+
+
+def _similarity_profile(
+    member_positions: list[int],
+    edges: dict[tuple[int, int], float],
+    song_count: int,
+) -> tuple[float, ...]:
+    members = set(member_positions)
+    values: list[float] = []
+    for target in range(song_count):
+        incident = [
+            score
+            for (left, right), score in edges.items()
+            if (left in members and right == target) or (right in members and left == target)
+        ]
+        values.append(median(incident) if incident else 0.0)
+    return tuple(values)
 
 
 def _load_guidance(path: str | Path) -> GuidanceSet:
@@ -392,28 +467,53 @@ def _load_guidance(path: str | Path) -> GuidanceSet:
 
 
 def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[str, Any]:
-    """Discover stable descriptor communities and write canonical candidates."""
+    """Discover independently stable per-lens and late-fused communities."""
     run_dir = Path(run)
     songs = [SongRecord.model_validate(item) for item in _read_collection(run_dir, "songs.json")]
     feature_rows = _read_collection(run_dir, "features.json")
-    by_song = {
-        item["song_id"]: item["vector"]
-        for item in feature_rows
-        if item.get("feature_view") == "descriptors"
+    by_view: dict[str, dict[str, list[float]]] = defaultdict(dict)
+    for feature_row in feature_rows:
+        view = feature_row.get("feature_view")
+        if view in {"semantic_audio", "acoustic", "lyrics", "descriptors"}:
+            by_view[view][feature_row["song_id"]] = [
+                float(value) for value in feature_row["vector"]
+            ]
+    # Descriptor features remain the compatibility floor.  Research runs may
+    # add any independently available model lenses without changing identity.
+    usable = [
+        song.song_id for song in songs if any(song.song_id in rows for rows in by_view.values())
+    ]
+    vectors_by_lens: dict[str, list[list[float] | None]] = {
+        view: [rows.get(song_id) for song_id in usable] for view, rows in sorted(by_view.items())
     }
-    usable = [song.song_id for song in songs if song.song_id in by_song]
-    vectors = _standardize([by_song[song_id] for song_id in usable])
-    edges = _edges(vectors)
+    if "descriptors" in vectors_by_lens:
+        vectors_by_lens["descriptors"] = _standardize_sparse(vectors_by_lens["descriptors"])
+    graphs = _discovery_graphs(usable, vectors_by_lens, k=30) if usable else {}
+    graph_variants = (
+        {k: _discovery_graphs(usable, vectors_by_lens, k=k) for k in K_VARIANTS} if usable else {}
+    )
+    edges = dict(graphs["fused"].edges) if graphs else {}
     guidance_id: str | None = None
     if guidance is not None:
         guidance_set = _load_guidance(guidance)
         validate_guidance(guidance_set, set(usable))
+        complete_lens = next(
+            (
+                rows
+                for name in ("descriptors", "semantic_audio", "acoustic", "lyrics")
+                if (rows := vectors_by_lens.get(name)) and all(row is not None for row in rows)
+            ),
+            None,
+        )
+        if complete_lens is None:
+            raise ValueError("guidance requires one feature lens covering every usable song")
+        guidance_vectors = [list(row) for row in complete_lens if row is not None]
         named_edges: dict[tuple[str, str], float] = {}
         for (left, right), score in edges.items():
             left_id, right_id = usable[left], usable[right]
             pair = (left_id, right_id) if left_id < right_id else (right_id, left_id)
             named_edges[pair] = max(score, named_edges.get(pair, 0.0))
-        vector_map = dict(zip(usable, vectors, strict=True))
+        vector_map = dict(zip(usable, guidance_vectors, strict=True))
         guidance_edges: dict[tuple[str, str], float] | None = None
         if guidance_set.positive_song_ids:
             positive = [vector_map[song_id] for song_id in guidance_set.positive_song_ids]
@@ -468,64 +568,82 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
         )
     backend = SeededLeidenBackend(min_edge_weight=0.50)
     evidence: list[CandidateEvidence] = []
-    for resolution in (0.25, 0.5, 1.0, 2.0, 4.0):
-        reference_result = backend.cluster(usable, edges, resolution=resolution, seed=0)
-        reference = _communities(usable, reference_result.labels, f"r{resolution:g}")
-        trials: list[list[Community]] = []
-        for perturbation in default_perturbations():
-            perturbed = {
-                edge: max(0.0, min(1.0, score * perturbation.edge_multiplier))
-                for edge, score in edges.items()
-            }
-            result = backend.cluster(
-                usable, perturbed, resolution=resolution, seed=perturbation.cluster_seed
+    lens_graphs: dict[str, ViewGraph | FusedGraph] = dict(graphs)
+    if guidance is not None and "fused" in lens_graphs:
+        # Guidance is deliberately an auditable comparison against unguided
+        # discovery.  It modifies only the fused decision graph, never lens
+        # evidence or the per-lens stability runs.
+        fused_graph = graphs["fused"]
+        if not isinstance(fused_graph, FusedGraph):
+            raise TypeError("fused discovery graph must be a FusedGraph")
+        lens_graphs["fused"] = FusedGraph(
+            tuple(usable),
+            edges,
+            fused_graph.contributions,
+            fused_graph.available_weight,
+        )
+    for lens, graph in lens_graphs.items():
+        lens_edges = graph.edges
+        for resolution in (0.25, 0.5, 1.0, 2.0, 4.0):
+            reference_result = backend.cluster(usable, lens_edges, resolution=resolution, seed=0)
+            reference = _communities(
+                usable, reference_result.labels, f"{lens}:r{resolution:g}", lens
             )
-            trials.append(_communities(usable, result.labels, f"t{perturbation.trial}"))
-        for community in reference:
-            if len(community.member_song_ids) < 8:
-                continue
-            stability, recurrence = community_consensus(community, trials)
-            member_positions = [usable.index(song_id) for song_id in community.member_song_ids]
-            inside = [
-                score
-                for (left, right), score in edges.items()
-                if left in member_positions and right in member_positions
-            ]
-            outside = [
-                score
-                for (left, right), score in edges.items()
-                if left in member_positions and right not in member_positions
-            ]
-            cohesion = sum(inside) / len(inside) if inside else 0.0
-            nearest_outside = (
-                sum(sorted(outside, reverse=True)[: max(1, len(member_positions))])
-                / max(1, min(len(outside), len(member_positions)))
-                if outside
-                else 0.0
-            )
-            centroid = tuple(
-                sum(vectors[index][dimension] for index in member_positions) / len(member_positions)
-                for dimension in range(len(vectors[0]))
-            )
-            candidate_id = hashlib.sha256(
-                "|".join(sorted(community.member_song_ids)).encode()
-            ).hexdigest()[:16]
-            evidence.append(
-                CandidateEvidence(
-                    candidate_id,
-                    community.member_song_ids,
-                    _granularity(len(member_positions), len(usable)),
-                    centroid,
-                    stability,
-                    sum(value >= 0.8 for value in recurrence.values()) / len(recurrence),
-                    cohesion,
-                    max(0.0, cohesion - nearest_outside),
-                    1.0 - len(member_positions) / len(usable),
-                    cohesion - nearest_outside,
-                    "descriptors",
-                    resolution,
+            trials: list[list[Community]] = []
+            for perturbation in default_perturbations():
+                variant_k = K_VARIANTS[perturbation.trial % len(K_VARIANTS)]
+                variant = graph_variants[variant_k].get(lens, graph)
+                perturbed = {
+                    edge: max(0.0, min(1.0, score * perturbation.edge_multiplier))
+                    for edge, score in variant.edges.items()
+                }
+                result = backend.cluster(
+                    usable,
+                    perturbed,
+                    resolution=resolution,
+                    seed=perturbation.cluster_seed,
                 )
-            )
+                trials.append(
+                    _communities(usable, result.labels, f"{lens}:t{perturbation.trial}", lens)
+                )
+            for community in reference:
+                if len(community.member_song_ids) < 8:
+                    continue
+                stability, recurrence = community_consensus(community, trials)
+                member_positions = [usable.index(song_id) for song_id in community.member_song_ids]
+                members = set(member_positions)
+                inside = [
+                    score
+                    for (left, right), score in lens_edges.items()
+                    if left in members and right in members
+                ]
+                outside = [
+                    score
+                    for (left, right), score in lens_edges.items()
+                    if (left in members) != (right in members)
+                ]
+                cohesion = median(inside) if inside else 0.0
+                outside_median = median(outside) if outside else 0.0
+                margin = cohesion - outside_median
+                centroid = _similarity_profile(member_positions, lens_edges, len(usable))
+                digest = f"{lens}|{resolution}|{'|'.join(sorted(community.member_song_ids))}"
+                candidate_id = hashlib.sha256(digest.encode()).hexdigest()[:16]
+                evidence.append(
+                    CandidateEvidence(
+                        candidate_id,
+                        community.member_song_ids,
+                        _granularity(len(member_positions), len(usable)),
+                        centroid,
+                        stability,
+                        sum(value >= 0.8 for value in recurrence.values()) / len(recurrence),
+                        cohesion,
+                        max(0.0, margin),
+                        1.0 - len(member_positions) / len(usable),
+                        margin,
+                        lens,
+                        resolution,
+                    )
+                )
     selected = select_candidates(evidence, library_size=max(1, len(usable))) if usable else ()
     candidates: list[PlaylistCandidate] = []
     memberships: list[Membership] = []
@@ -548,7 +666,7 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
             separation=max(0.0, min(1.0, item.distinctiveness)),
             novelty=max(0.0, min(1.0, item.novelty)),
             coverage=len(ordered) / len(usable),
-            naming_evidence=["descriptor similarity", item.granularity],
+            naming_evidence=[f"{item.lens} similarity", item.granularity],
             lineage={key: list(value) for key, value in item.lineage.items()},
             guidance_ids=[guidance_id] if guidance_id else [],
         )
@@ -557,13 +675,38 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
             Membership(
                 song_id=song_id,
                 candidate_id=item.candidate_id,
-                membership_score=1.0,
+                membership_score=max(0.60, min(1.0, item.stability * item.core_recurrence)),
                 threshold=0.6,
             )
             for song_id in ordered
         )
     _atomic_json(run_dir / "playlists.json", _collection(candidates))
     _atomic_json(run_dir / "memberships.json", _collection(memberships))
+    selected_ids = {item.candidate_id for item in selected}
+    _atomic_json(
+        run_dir / "discovery_evidence.json",
+        {
+            "lenses": sorted(lens_graphs),
+            "k_variants": list(K_VARIANTS),
+            "candidates": [
+                {
+                    "candidate_id": item.candidate_id,
+                    "lens": item.lens,
+                    "resolution": item.resolution,
+                    "member_song_ids": sorted(item.member_song_ids),
+                    "stability": item.stability,
+                    "core_recurrence": item.core_recurrence,
+                    "cohesion": item.cohesion,
+                    "distinctiveness": item.distinctiveness,
+                    "margin": item.margin,
+                    "rank": item.rank,
+                    "passed_gates": passes_candidate_gates(item, library_size=max(1, len(usable))),
+                    "selected": item.candidate_id in selected_ids,
+                }
+                for item in evidence
+            ],
+        },
+    )
     _atomic_json(
         run_dir / "manifest.json",
         _manifest(run_dir, [item.candidate_id for item in candidates]).model_dump(mode="json"),
@@ -572,7 +715,7 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
         "run": str(run_dir.resolve()),
         "usable_songs": len(usable),
         "candidates": len(candidates),
-        "lens": "descriptors",
+        "lenses": sorted(lens_graphs),
         "guidance": guidance_id,
         "abstained": not candidates,
     }

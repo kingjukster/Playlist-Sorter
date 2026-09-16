@@ -44,6 +44,23 @@ def test_missing_vectors_are_not_silently_converted_to_evidence():
         build_view_graph("lyrics", ["a"], torch.tensor([0.0, 1.0]))
 
 
+def test_song_level_missing_views_are_renormalized_per_comparison():
+    lenses = build_multi_lens_graphs(
+        ("a", "b", "c"),
+        {
+            "semantic_audio": [[1.0, 0.0], [0.9, 0.1], [0.0, 1.0]],
+            "lyrics": [[1.0, 0.0], None, [0.0, 1.0]],
+        },
+        k=2,
+        device="cpu",
+    )
+    fused = lenses["fused"]
+    assert (0, 1) in fused.edges
+    assert fused.available_weight[(0, 1)] == pytest.approx(0.35)
+    assert (0, 2) in fused.edges
+    assert fused.available_weight[(0, 2)] == pytest.approx(0.55)
+
+
 def test_metadata_is_diagnostic_only():
     diagnostics = metadata_leakage_diagnostics(
         {(0, 1): 0.8, (1, 2): 0.7},

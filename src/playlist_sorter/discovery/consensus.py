@@ -210,9 +210,13 @@ def _meaningful_parent_child(
 
 
 def _duplicate(left: CandidateEvidence, right: CandidateEvidence, policy: CandidatePolicy) -> bool:
+    centroid_matches = (
+        left.member_song_ids == right.member_song_ids
+        or _centroid_cosine(left.centroid, right.centroid) >= policy.duplicate_centroid_cosine
+    )
     return (
         jaccard(left.member_song_ids, right.member_song_ids) >= policy.duplicate_jaccard
-        and _centroid_cosine(left.centroid, right.centroid) >= policy.duplicate_centroid_cosine
+        and centroid_matches
         and not _meaningful_parent_child(left, right, policy.meaningful_parent_child_ratio)
     )
 

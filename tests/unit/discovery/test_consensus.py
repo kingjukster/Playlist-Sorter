@@ -66,3 +66,17 @@ def test_calibrated_membership_is_overlap_safe_and_abstains_when_weak():
     )
     assert 0.9 < strong <= 1.0
     assert 0.0 <= weak < 0.5
+
+
+def test_exact_cross_lens_membership_duplicates_ignore_centroid_dimensions():
+    left = _candidate("left", range(8), "broad", 0.99)
+    right = CandidateEvidence(
+        **{
+            **left.__dict__,
+            "candidate_id": "right",
+            "centroid": (1.0, 0.0, 0.0),
+            "lens": "lyrics",
+        }
+    )
+    selected = select_candidates((right, left), library_size=20)
+    assert len(selected) == 1
