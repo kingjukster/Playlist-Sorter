@@ -5,8 +5,9 @@ overlapping playlists without modifying source media. The repository implements
 read-only cataloging, versioned contracts, deterministic descriptors and graph
 utilities, guidance policy, evaluation gates, review artifacts, and atomic
 exports. The CLI now runs a complete descriptor-lens scan-to-export pipeline.
-Pinned MuQ/MuLan/Qwen model execution remains an optional, unqualified research
-extension until it is run under the approved WSL2/CUDA resource gates.
+Pinned MuQ/MuLan/Qwen execution is an optional, local-snapshot-only `research`
+profile. It remains unqualified until it completes the approved WSL2/CUDA
+resource gates on an explicitly authorized private subset.
 
 ## What works now
 
@@ -28,7 +29,7 @@ The Typer interface exposes the frozen command shape:
 playlist-sorter doctor --path <output-root>
 playlist-sorter acquire youtube --manifest <yaml|json|csv> --output <directory>
 playlist-sorter catalog scan --library <path> --output <run>
-playlist-sorter features build --run <run> --profile research
+playlist-sorter features build --run <run> --profile descriptors
 playlist-sorter discover --run <run> [--guidance <yaml>]
 playlist-sorter review --run <run>
 playlist-sorter export --run <run> --format json|csv|m3u8
@@ -39,6 +40,26 @@ Each command invokes the corresponding service. `review` launches Streamlit on
 `127.0.0.1` only. `export` writes to `<run>/exports/playlists.<format>` by default
 or an explicit `--output`, after producing the exact preview bytes. Offline tests
 do not launch a persistent server or download model weights.
+
+### Feature profiles and cache behavior
+
+`--profile` accepts exactly two lowercase values; unknown, spaced, or
+case-normalized values fail closed.
+
+- `descriptors` is the runnable offline compatibility profile. It writes only
+  the descriptor view and never creates or loads a model adapter. Reruns reuse
+  matching source/preprocessing rows in that run's `features.json`.
+- `research` requests MuQ acoustic, MuQ-MuLan semantic-audio, and (when
+  nonblank lyrics exist) Qwen lyrics views. It never falls back to descriptors.
+  It requires the optional `research` dependencies and exact model snapshots
+  already present locally; adapters use `local_files_only=True`. Missing lyrics
+  abstain rather than invent a vector.
+
+Research entries are content/provenance-addressed under that run's
+`embedding_cache`: source SHA-256, repository and revision, preprocessing,
+pooling, view, and segment identity determine the cache key. A cache hit skips
+adapter inference. The default pipeline cache is JSON; the separately available
+Safetensors/Parquet backend requires NumPy, PyArrow, and Safetensors.
 
 ## Authorized YouTube acquisition
 
@@ -65,6 +86,9 @@ commands, append-only receipts, SHA-256 values, and JSON/Markdown run summaries.
 An unchanged verified rerun skips completed files. Feed the resulting `media/`
 directory to `catalog scan`. Acquisition outputs and private manifests must stay
 outside Git.
+
+The policy and synthetic downloader boundary are tested, but no live acquisition
+was run in this campaign; it remains unqualified.
 
 ## Exact offline quickstart
 
@@ -95,16 +119,44 @@ and resource telemetry, and write `run_summary.md` under the chosen output. They
 perform catalog-only gates: no model inference, model download, library mutation,
 or persistent server.
 
+```powershell
+.\scripts\smoke.ps1 -Library <exact-20-file-directory> -Output <private-output>
+.\scripts\benchmark.ps1 -Library <exact-200-file-directory> -SmokeReceipt <receipt> -Output <private-output>
+```
+
+These are catalog-only WSL2 wrapper gates, not model-backed inference. The
+offline suite validates generated/synthetic inputs; it does not scan private
+media, acquire videos, download/load/infer models, or qualify 20/200/10,000-song
+operational results.
+
+### Model-backed qualification sequence
+
+Before any model load, inference, or download, save a fresh machine preflight
+with RAM, VRAM, GPU utilization/temperature/power, and competing-process state.
+Only with an explicitly authorized private subset and practical local snapshots
+may the one-song smoke run; proceed to at most 20 songs only if it has no NaN,
+OOM, driver reset, or resource-gate failure. Retain the command, timestamps,
+model revisions, cache evidence, throughput, and telemetry in a private output.
+Never substitute the 98-song library for this gate.
+
 ## Privacy, models, and qualification
 
 - Source audio, private paths, lyrics, feedback, caches, weights, and run outputs
   stay local and are ignored by Git.
-- OpenMuQ/MuQ weights are CC-BY-NC 4.0 and belong only to the non-commercial
-  research profile; Qwen3-Embedding code/weights are Apache-2.0 as documented.
-- Model revisions are pinned in configuration, but no weights are redistributed
-  or downloaded by this stage.
-- Synthetic tests do not qualify private historical labels, model-backed quality,
-  a 10,000-song run, or the required 100 blind human comparisons.
+- OpenMuQ/MuQ weights are CC-BY-NC 4.0 and belong only to non-commercial
+  research. The pinned identifiers are
+  `OpenMuQ/MuQ-large-msd-iter@0562a57814f6f8bbd9fdea0a25921a2fce1a841a`,
+  `OpenMuQ/MuQ-MuLan-large@2e01c796b71dca71b45251384c04cd7b237c9020`, and
+  `Qwen/Qwen3-Embedding-0.6B@97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`.
+  `configs/license_registry.toml` records Qwen's declared Apache-2.0 boundary;
+  users must verify and obey upstream terms before use.
+- No weights are redistributed or downloaded by this stage. MuQ/MuLan use FP32;
+  Qwen requests BF16 on supported CUDA and otherwise uses FP32.
+- Synthetic tests do not qualify model download/load/inference, private historical
+  labels, model-backed quality or numeric equivalence, private 1/20-song runs,
+  a 10,000-song run, or the required 100 blind human comparisons. WSL2/Python
+  3.12/CUDA is the live-model qualification environment; Windows scripts are
+  catalog-only wrappers.
 
 See [current status](docs/STATUS.md), the
 [requirements matrix](docs/REQUIREMENTS_MATRIX.md), the

@@ -1,9 +1,8 @@
 # Implementation and qualification status
 
-The integration stage started from combined commit
-`08aad41cdbbd7a2804bf7f3ab2df936d9d9316a8`. The final stage commit and evidence
-are recorded by the campaign coordinator after all checks complete. This is a
-candidate, not a release or authorization to scan private music.
+This candidate is based on `c5d2ca48afdffae091e914cc12c803bdd31814b7`. It is
+not a release, permission to scan private music, or evidence that a live model
+run occurred.
 
 ## Implemented
 
@@ -27,17 +26,21 @@ candidate, not a release or authorization to scan private music.
 
 ## Known interface limits
 
-The runnable automatic-discovery MVP currently uses the explicit descriptor
-lens. The pinned MuQ, MuQ-MuLan, and Qwen entries and cache boundaries exist, but
-their heavyweight inference adapters have not been qualified end to end under
-WSL2/CUDA. Parquet/Safetensors writers also remain optional runtime backends.
+`descriptors` is the runnable automatic-discovery profile. `research` is a
+separate exact profile: it uses pinned, lazy MuQ, MuQ-MuLan, and Qwen adapters
+from local snapshots and does not silently replace a missing model view. It adds
+acoustic, semantic-audio, and optional lyrics views; absent lyrics abstain.
+Research cache hits skip inference and are bound to complete provenance. The
+default pipeline cache is JSON; Safetensors/Parquet remains optional.
 
 ## Explicitly unqualified
 
 - model download, load, or MuQ/MuLan/Qwen inference;
 - model-backed multimodal quality and numeric equivalence;
 - private lyrics, private historical labels, or a private music library;
-- operational 20-song and 200-song gates on user data;
+- the required one-song model smoke and conditional 20-song model smoke on the
+  explicitly authorized private subset;
+- operational 20-song and 200-song catalog-only gates on user data;
 - fresh 10,000-song time/RAM/VRAM/cache/ANN qualification;
 - guided private held-out evaluation and 100 blind human comparisons;
 - streaming-service writes, deployment, release, or commercial use.
@@ -45,4 +48,7 @@ WSL2/CUDA. Parquet/Safetensors writers also remain optional runtime backends.
 
 Unavailable telemetry is recorded as `null`/`unknown`, never guessed or treated
 as zero. No persistent server, model weight, private scan, or external write is
-part of the offline integration acceptance.
+part of offline acceptance. WSL2/Python 3.12/CUDA is the live-model qualification
+environment; the PowerShell smoke/benchmark wrappers are catalog-only. A current
+resource preflight is mandatory before model load, inference, or download, and
+this campaign does not authorize a 98-song run.

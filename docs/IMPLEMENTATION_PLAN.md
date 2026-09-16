@@ -15,7 +15,7 @@ plan, not a claim that every planned runtime path is complete.
 
 ## Outcome and boundaries
 
-Build a local-first, WSL2-only Python 3.12 application that discovers useful,
+Build a local-first Python 3.12 application that discovers useful,
 stable, overlapping playlists from a private library of up to 10,000 songs.
 Automatic zero-shot discovery is the MVP; optional guidance may use at most 19
 unique songs per run. The implementation may install ordinary project
@@ -34,8 +34,10 @@ Apache-2.0. Model weights are never redistributed.
 - Keep the Git repository on D:, but document/recommend WSL ext4 locations for
   the virtual environment, model cache, decoded intermediates, and embedding
   cache.
-- Implement `playlist-sorter doctor` to verify WSL2, Python, CUDA PyTorch,
-  pinned model revisions, FFmpeg, disk and permissions.
+- Implement `playlist-sorter doctor` to report runtime readiness, including
+  Python, CUDA PyTorch, pinned model revisions, FFmpeg, disk, and permissions.
+  Ubuntu 24.04 under WSL2 is the target qualification environment; invoking the
+  CLI on another platform does not qualify a live gate.
 - Expensive work fails closed below 8 GB host-available RAM, 12 GB free VRAM, or
   required disk headroom, and when unsafe unrelated GPU contention is detected.
   Never terminate unrelated processes.
@@ -109,7 +111,7 @@ CLI commands:
 ```
 playlist-sorter doctor
 playlist-sorter catalog scan --library <path> --output <run>
-playlist-sorter features build --run <run> --profile research
+playlist-sorter features build --run <run> --profile descriptors
 playlist-sorter discover --run <run> [--guidance <yaml>]
 playlist-sorter review --run <run>
 playlist-sorter export --run <run> --format json|csv|m3u8
