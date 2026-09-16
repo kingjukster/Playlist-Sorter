@@ -1,0 +1,15 @@
+# Local-first privacy policy. Raw exports and model artifacts stay untracked.
+[sources]
+allow_network_downloads = false
+allow_model_weight_downloads = false
+raw_data_is_private = true
+ignore_audio = true
+ignore_lyrics = true
+ignore_runs = true
+ignore_feedback = true
+ignore_embeddings = true
+ignore_cache = true
+ignore_models = true
+
+[telemetry]
+enabled = false
