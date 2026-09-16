@@ -108,3 +108,19 @@ def test_descriptor_only_discovery_remains_supported(tmp_path, monkeypatch):
 
     assert summary["lenses"] == ["descriptors", "fused"]
     assert any(item["passed_gates"] for item in evidence["candidates"])
+
+
+def test_discovery_deduplicates_exact_source_song_ids(tmp_path, monkeypatch):
+    song_ids = _write_run(tmp_path, ("semantic_audio", "acoustic"))
+    songs_path = tmp_path / "songs.json"
+    songs = json.loads(songs_path.read_text(encoding="utf-8"))
+    duplicate = dict(songs["items"][0])
+    duplicate["source_path"] = str(tmp_path / "duplicate-encode.wav")
+    songs["items"].append(duplicate)
+    songs_path.write_text(json.dumps(songs), encoding="utf-8")
+    monkeypatch.setattr(service, "_discovery_graphs", _fake_graphs)
+    monkeypatch.setattr(service, "SeededLeidenBackend", _ComponentsOnly)
+
+    summary = service.discover_run(tmp_path)
+
+    assert summary["usable_songs"] == len(song_ids)

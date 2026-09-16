@@ -543,9 +543,14 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
             ]
     # Descriptor features remain the compatibility floor.  Research runs may
     # add any independently available model lenses without changing identity.
-    usable = [
-        song.song_id for song in songs if any(song.song_id in rows for rows in by_view.values())
-    ]
+    # Catalogs retain every exact source file for auditability, so byte-identical
+    # files can legitimately share a SHA-derived song_id. Discovery operates on
+    # musical identities and therefore keeps the first catalog occurrence only.
+    usable = list(
+        dict.fromkeys(
+            song.song_id for song in songs if any(song.song_id in rows for rows in by_view.values())
+        )
+    )
     vectors_by_lens: dict[str, list[list[float] | None]] = {
         view: [rows.get(song_id) for song_id in usable] for view, rows in sorted(by_view.items())
     }
