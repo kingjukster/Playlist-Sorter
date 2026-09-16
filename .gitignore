@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.env
+.music-profile/
+music_profile_source.json
+music_profile_summary.md
+validation_report.json
+
+# Private music-library exports and captures
+data/
+exports/
+*.music-library.xml
