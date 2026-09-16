@@ -27,6 +27,7 @@ from playlist_sorter.core.contracts import (
     PlaylistCandidate,
     RunManifest,
     SongRecord,
+    parse_feature_profile,
 )
 from playlist_sorter.discovery import (
     CandidateEvidence,
@@ -37,6 +38,7 @@ from playlist_sorter.discovery import (
     select_candidates,
 )
 from playlist_sorter.evaluation import ndcg_at_k, precision_at_k
+from playlist_sorter.embeddings import EmbeddingCache, adapter_for
 from playlist_sorter.features import describe_samples
 from playlist_sorter.guidance import apply_guidance, validate_guidance
 
@@ -146,10 +148,31 @@ def scan_to_run(library: str | Path, output: str | Path) -> dict[str, Any]:
     }
 
 
-def build_features(run: str | Path, profile: str = "research") -> dict[str, Any]:
-    """Decode audio and cache deterministic descriptor and segment artifacts."""
-    if profile != "research":
-        raise ValueError("the MVP supports only the research profile")
+def _result_vector(result: Any) -> tuple[list[float], dict[str, Any], dict[str, Any]]:
+    """Normalize the stable InferenceResult shape without importing ML code."""
+    vector = getattr(result, "vector", result.get("vector") if isinstance(result, dict) else None)
+    if vector is None:
+        raise TypeError("adapter result must expose vector")
+    provenance = getattr(result, "provenance", None) or {}
+    telemetry = getattr(result, "telemetry", None)
+    telemetry_record = dict(vars(telemetry)) if telemetry is not None else {}
+    return [float(item) for item in vector], dict(provenance), telemetry_record
+
+
+def build_features(
+    run: str | Path,
+    profile: str = "descriptors",
+    *,
+    adapters: dict[str, Any] | None = None,
+    cache: Any | None = None,
+) -> dict[str, Any]:
+    """Build descriptor features or injected model-backed research views.
+
+    ``adapters`` and ``cache`` are deliberately injection points: production
+    callers may resolve them through ``adapter_for(name)``, while tests can use
+    deterministic fakes without importing ML runtimes.
+    """
+    selected_profile = parse_feature_profile(profile)
     run_dir = Path(run)
     songs = [SongRecord.model_validate(item) for item in _read_collection(run_dir, "songs.json")]
     previous = (
@@ -165,10 +188,15 @@ def build_features(run: str | Path, profile: str = "research") -> dict[str, Any]
     updated_songs: list[SongRecord] = []
     for song in songs:
         cached = previous.get(song.integrity_fingerprint)
-        if cached and cached.get("preprocessing_config") == {
-            "sample_rate": 24000,
-            "window_seconds": 10.0,
-        }:
+        if (
+            selected_profile.descriptors
+            and cached
+            and cached.get("preprocessing_config")
+            == {
+                "sample_rate": 24000,
+                "window_seconds": 10.0,
+            }
+        ):
             features.append(cached)
             cache_hits += 1
             updated_songs.append(
@@ -192,16 +220,77 @@ def build_features(run: str | Path, profile: str = "research") -> dict[str, Any]
             descriptor["peak"],
             descriptor["zero_crossing_rate"],
         ]
-        features.append(
-            {
-                "song_id": song.song_id,
-                "feature_view": "descriptors",
-                "vector": vector,
-                "source_fingerprint": song.integrity_fingerprint,
-                "preprocessing_config": {"sample_rate": sample_rate, "window_seconds": 10.0},
-                "elapsed_seconds": perf_counter() - item_started,
-            }
-        )
+        if selected_profile.descriptors:
+            features.append(
+                {
+                    "song_id": song.song_id,
+                    "feature_view": "descriptors",
+                    "vector": vector,
+                    "source_fingerprint": song.integrity_fingerprint,
+                    "preprocessing_config": {
+                        "sample_rate": sample_rate,
+                        "window_seconds": 10.0,
+                    },
+                    "elapsed_seconds": perf_counter() - item_started,
+                }
+            )
+        else:
+            adapters = adapters or {name: adapter_for(name) for name in ("muq", "mulan", "qwen")}
+            cache = cache or EmbeddingCache(run_dir / "embedding_cache")
+            sample_segments = [
+                samples[
+                    round(segment.start_seconds * sample_rate) : round(
+                        min(segment.end_seconds, len(samples) / sample_rate) * sample_rate
+                    )
+                ]
+                for segment in chosen
+            ]
+            for view, adapter_name in (("acoustic", "muq"), ("semantic_audio", "mulan")):
+                result = adapters[adapter_name].embed_audio(
+                    samples,
+                    sample_segments,
+                    sample_rate=sample_rate,
+                    source_sha256=song.integrity_fingerprint,
+                    cache=cache,
+                )
+                embedding, provenance, telemetry = _result_vector(result)
+                cache_hits += int(bool(telemetry.get("cache_hit")))
+                features.append(
+                    {
+                        "song_id": song.song_id,
+                        "feature_view": view,
+                        "vector": embedding,
+                        "source_fingerprint": song.integrity_fingerprint,
+                        "preprocessing_config": {"sample_rate": 24000, "mono": True},
+                        "model_repository": getattr(
+                            adapters[adapter_name], "repository", adapter_name
+                        ),
+                        "model_revision": getattr(adapters[adapter_name], "revision", "injected"),
+                        "provenance": provenance,
+                        "telemetry": telemetry,
+                    }
+                )
+            if song.lyrics and song.lyrics.strip():
+                result = adapters["qwen"].embed_lyrics(
+                    song.lyrics,
+                    source_sha256=song.integrity_fingerprint,
+                    cache=cache,
+                )
+                embedding, provenance, telemetry = _result_vector(result)
+                cache_hits += int(bool(telemetry.get("cache_hit")))
+                features.append(
+                    {
+                        "song_id": song.song_id,
+                        "feature_view": "lyrics",
+                        "vector": embedding,
+                        "source_fingerprint": song.integrity_fingerprint,
+                        "preprocessing_config": {"lyrics": True},
+                        "model_repository": getattr(adapters["qwen"], "repository", "qwen"),
+                        "model_revision": getattr(adapters["qwen"], "revision", "injected"),
+                        "provenance": provenance,
+                        "telemetry": telemetry,
+                    }
+                )
         segments.extend(
             {
                 "segment_id": f"{song.song_id}:{index}",
@@ -229,7 +318,11 @@ def build_features(run: str | Path, profile: str = "research") -> dict[str, Any]
         "failures": len(failures),
         "cache_hits": cache_hits,
         "elapsed_seconds": perf_counter() - started,
-        "model_inference": "not_run; descriptor lens only",
+        "model_inference": (
+            "not_run; descriptor lens only"
+            if selected_profile.descriptors
+            else "model-backed research views"
+        ),
     }
 
 
