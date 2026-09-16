@@ -10,12 +10,15 @@ def _adjusted_rand_index(labels_a, labels_b):
     b_counts = Counter(labels_b)
     total = len(labels_a)
     numerator = sum(comb(value, 2) for value in pairs.values())
-    expected = sum(comb(value, 2) for value in a_counts.values()) * sum(
-        comb(value, 2) for value in b_counts.values()
-    ) / comb(total, 2)
-    upper = (sum(comb(value, 2) for value in a_counts.values()) + sum(
-        comb(value, 2) for value in b_counts.values()
-    )) / 2
+    expected = (
+        sum(comb(value, 2) for value in a_counts.values())
+        * sum(comb(value, 2) for value in b_counts.values())
+        / comb(total, 2)
+    )
+    upper = (
+        sum(comb(value, 2) for value in a_counts.values())
+        + sum(comb(value, 2) for value in b_counts.values())
+    ) / 2
     return (numerator - expected) / (upper - expected) if upper != expected else 1.0
 
 

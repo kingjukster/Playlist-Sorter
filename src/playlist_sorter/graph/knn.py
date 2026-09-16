@@ -25,7 +25,7 @@ DEFAULT_FUSION_WEIGHTS = {
 
 def _torch():
     try:
-        import torch
+        import torch  # type: ignore[import-not-found]
     except ImportError as exc:  # pragma: no cover - depends on the runtime image
         raise RuntimeError(
             "exact graph construction requires an installed PyTorch runtime"
@@ -82,9 +82,7 @@ def build_multi_lens_graphs(
     if unknown:
         raise ValueError(f"unsupported views: {sorted(unknown)}")
     views = {
-        name: build_view_graph(
-            name, song_ids, vectors, k=k, block_size=block_size, device=device
-        )
+        name: build_view_graph(name, song_ids, vectors, k=k, block_size=block_size, device=device)
         for name, vectors in vectors_by_view.items()
         if vectors is not None
     }
