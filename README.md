@@ -99,7 +99,7 @@ overhead:
 ```bash
 sudo apt-get install -y python3.12 python3.12-venv ffmpeg
 curl -LsSf https://astral.sh/uv/install.sh | sh
-cd /mnt/c/Users/kingj/projects/b9dd/Playlist-Sorter
+cd /mnt/d/Users/kingj/projects/b9dd/Playlist-Sorter
 export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/playlist-sorter/venv"
 export UV_CACHE_DIR="$HOME/.cache/playlist-sorter/uv"
 export XDG_CACHE_HOME="$HOME/.cache/playlist-sorter"
