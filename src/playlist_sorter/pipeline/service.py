@@ -123,23 +123,26 @@ def scan_to_run(library: str | Path, output: str | Path) -> dict[str, Any]:
     if run_dir.exists() and any(run_dir.iterdir()):
         raise ValueError("output run directory must be empty")
     run_dir.mkdir(parents=True, exist_ok=True)
-    records = [
-        SongRecord(
-            song_id=song.song_id,
-            source_path=song.source_path,
-            title=Path(song.source_path).stem,
-            duration_seconds=song.duration_seconds,
-            codec=song.codec,
-            sample_rate=int(song.metadata["sample_rate"])
-            if "sample_rate" in song.metadata
-            else None,
-            channels=int(song.metadata["channels"]) if "channels" in song.metadata else None,
-            file_size=song.size_bytes,
-            integrity_fingerprint=song.sha256,
-            variant_group_id=song.variant_group_id,
+    records_by_id: dict[str, SongRecord] = {}
+    for song in songs:
+        records_by_id.setdefault(
+            song.song_id,
+            SongRecord(
+                song_id=song.song_id,
+                source_path=song.source_path,
+                title=Path(song.source_path).stem,
+                duration_seconds=song.duration_seconds,
+                codec=song.codec,
+                sample_rate=int(song.metadata["sample_rate"])
+                if "sample_rate" in song.metadata
+                else None,
+                channels=int(song.metadata["channels"]) if "channels" in song.metadata else None,
+                file_size=song.size_bytes,
+                integrity_fingerprint=song.sha256,
+                variant_group_id=song.variant_group_id,
+            ),
         )
-        for song in songs
-    ]
+    records = list(records_by_id.values())
     _atomic_json(run_dir / "catalog.json", _collection([song.__dict__ for song in songs]))
     _atomic_json(
         run_dir / "catalog_failures.json", _collection([item.__dict__ for item in failures])
@@ -151,7 +154,8 @@ def scan_to_run(library: str | Path, output: str | Path) -> dict[str, Any]:
     _atomic_json(run_dir / "manifest.json", manifest.model_dump(mode="json"))
     return {
         "run": str(run_dir.resolve()),
-        "songs": len(songs),
+        "songs": len(records),
+        "source_files": len(songs),
         "failures": len(failures),
         "variant_groups": len({song.variant_group_id for song in songs}),
     }

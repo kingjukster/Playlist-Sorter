@@ -58,3 +58,20 @@ def test_generated_audio_scan_feeds_canonical_export_without_touching_media(tmp_
     assert preview.row_count == 0
     assert "playlist_name" in preview.text
     assert {path: path.read_bytes() for path in (first, second)} == before
+
+
+def test_scan_retains_duplicate_files_but_emits_unique_canonical_songs(tmp_path):
+    library = tmp_path / "library"
+    first = _write_generated_wav(library / "first.wav", samples=(0.1,) * 800)
+    duplicate = library / "duplicate.wav"
+    duplicate.write_bytes(first.read_bytes())
+
+    run_dir = tmp_path / "canonical-run"
+    scan = scan_to_run(library, run_dir)
+    catalog = json.loads((run_dir / "catalog.json").read_text(encoding="utf-8"))["items"]
+    songs = json.loads((run_dir / "songs.json").read_text(encoding="utf-8"))["items"]
+
+    assert scan["source_files"] == 2
+    assert scan["songs"] == 1
+    assert len(catalog) == 2
+    assert len(songs) == 1
