@@ -53,7 +53,11 @@ case-normalized values fail closed.
   nonblank lyrics exist) Qwen lyrics views. It never falls back to descriptors.
   It requires the optional `research` dependencies and exact model snapshots
   already present locally; adapters use `local_files_only=True`. Missing lyrics
-  abstain rather than invent a vector.
+  abstain rather than invent a vector. MuQ and MuQ-MuLan use the official
+  `muq==0.1.0` runtime rather than Transformers `AutoModel`. MuQ-MuLan also
+  requires only the pinned `FacebookAI/xlm-roberta-base` configuration at
+  `e73636d4f797dec63c3081bb6ed5c7b0bb3f2089`; its outer checkpoint already
+  contains the trained text-tower weights.
 
 Research entries are content/provenance-addressed under that run's
 `embedding_cache`: source SHA-256, repository and revision, preprocessing,
@@ -103,7 +107,7 @@ cd /mnt/d/Users/kingj/projects/b9dd/Playlist-Sorter
 export UV_PROJECT_ENVIRONMENT="$HOME/.local/share/playlist-sorter/venv"
 export UV_CACHE_DIR="$HOME/.cache/playlist-sorter/uv"
 export XDG_CACHE_HOME="$HOME/.cache/playlist-sorter"
-uv sync --frozen
+uv sync --extra research --frozen
 uv run pytest -q
 uv run ruff format --check .
 uv run ruff check .
@@ -138,6 +142,14 @@ may the one-song smoke run; proceed to at most 20 songs only if it has no NaN,
 OOM, driver reset, or resource-gate failure. Retain the command, timestamps,
 model revisions, cache evidence, throughput, and telemetry in a private output.
 Never substitute the 98-song library for this gate.
+
+MuQ-MuLan's text-tower architecture also needs the pinned XLM-R configuration
+(not its separate weights):
+
+```bash
+uv run hf download FacebookAI/xlm-roberta-base config.json \
+  --revision e73636d4f797dec63c3081bb6ed5c7b0bb3f2089
+```
 
 ## Privacy, models, and qualification
 

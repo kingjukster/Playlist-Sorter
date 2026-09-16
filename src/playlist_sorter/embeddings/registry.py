@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass, field
+import json
 import math
 from pathlib import Path
 from time import perf_counter
@@ -18,6 +19,11 @@ MODEL_REVISIONS = {
     "mulan": ("OpenMuQ/MuQ-MuLan-large", "2e01c796b71dca71b45251384c04cd7b237c9020", "fp32"),
     "qwen": ("Qwen/Qwen3-Embedding-0.6B", "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3", "bf16"),
 }
+
+XLM_ROBERTA_CONFIG = (
+    "FacebookAI/xlm-roberta-base",
+    "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089",
+)
 
 
 @dataclass(frozen=True)
@@ -146,6 +152,88 @@ class _TransformersRuntime:
         return result
 
 
+class _MuQRuntime:
+    """Official MuQ runtime backed only by exact local Hugging Face snapshots."""
+
+    def __init__(self, snapshot: Path, device: str, variant: str):
+        try:
+            import torch
+            from muq import MuQ, MuQConfig, MuQMuLan
+            from transformers import XLMRobertaConfig, XLMRobertaModel
+        except ImportError as exc:
+            raise RuntimeError(
+                "MuQ adapters require the optional research dependencies, including muq"
+            ) from exc
+        self.torch, self.device, self.variant = torch, device, variant
+        if variant == "muq":
+            model = MuQ.from_pretrained(str(snapshot), local_files_only=True)
+        elif variant == "mulan":
+            muq_repository, muq_revision, _ = MODEL_REVISIONS["muq"]
+            muq_snapshot = _snapshot(muq_repository, muq_revision)
+            xlm_snapshot = _snapshot(*XLM_ROBERTA_CONFIG)
+            with (muq_snapshot / "config.json").open(encoding="utf-8") as handle:
+                muq_config = MuQConfig(**json.load(handle))
+            with (snapshot / "config.json").open(encoding="utf-8") as handle:
+                mulan_config = json.load(handle)
+            xlm_config = XLMRobertaConfig.from_json_file(str(xlm_snapshot / "config.json"))
+
+            # MuQ-MuLan's constructor normally downloads two base models even though
+            # its own checkpoint contains their trained weights. Bootstrap those
+            # architectures from pinned local configs, then load the complete outer
+            # checkpoint with torch's weights-only unpickler.
+            muq_override = MuQ.__dict__.get("from_pretrained")
+            xlm_override = XLMRobertaModel.__dict__.get("from_pretrained")
+            setattr(
+                MuQ,
+                "from_pretrained",
+                classmethod(lambda cls, *args, **kwargs: cls(muq_config)),
+            )
+            setattr(
+                XLMRobertaModel,
+                "from_pretrained",
+                classmethod(lambda cls, *args, **kwargs: cls(xlm_config)),
+            )
+            try:
+                model = MuQMuLan(mulan_config)
+            finally:
+                if muq_override is None:
+                    delattr(MuQ, "from_pretrained")
+                else:
+                    setattr(MuQ, "from_pretrained", muq_override)
+                if xlm_override is None:
+                    delattr(XLMRobertaModel, "from_pretrained")
+                else:
+                    setattr(XLMRobertaModel, "from_pretrained", xlm_override)
+            state = torch.load(
+                snapshot / "pytorch_model.bin", map_location="cpu", weights_only=True
+            )
+            model.load_state_dict(state, strict=True)
+            del state
+        else:
+            raise ValueError(f"unsupported MuQ runtime variant: {variant}")
+        self.model = model.to(device=device, dtype=torch.float32).eval()
+
+    def embed_audio(self, batch: Sequence[Sequence[float]]) -> Sequence[Sequence[float]]:
+        result: list[list[float]] = []
+        for samples in batch:
+            waveform = self.torch.tensor(
+                samples, dtype=self.torch.float32, device=self.device
+            ).unsqueeze(0)
+            if self.variant == "muq":
+                output = self.model(waveform, output_hidden_states=True)
+                vector = output.last_hidden_state.mean(dim=1)
+            else:
+                vector = self.model(wavs=waveform, parallel_processing=False)
+            result.append(vector.detach().float().cpu().reshape(-1).tolist())
+        return result
+
+    def tokenize(self, text: str) -> Sequence[int]:
+        raise NotImplementedError("MuQ audio runtimes do not tokenize text")
+
+    def embed_text(self, batch: Sequence[Sequence[int]]) -> Sequence[Sequence[float]]:
+        raise NotImplementedError("MuQ audio runtimes do not embed token sequences")
+
+
 @dataclass
 class ProductionAdapter:
     name: str
@@ -225,7 +313,7 @@ class MuQAdapter(ProductionAdapter):
     """FP32 mono-24kHz MuQ/MuLan adapter with segment and track cache records."""
 
     def _runtime_loader(self, snapshot: Path, device: str, dtype: str) -> RuntimeModel:
-        return _TransformersRuntime(snapshot, device, "fp32", audio=True)
+        return _MuQRuntime(snapshot, device, self.name)
 
     def embed_audio(
         self,

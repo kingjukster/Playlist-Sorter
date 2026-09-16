@@ -35,11 +35,10 @@ default pipeline cache is JSON; Safetensors/Parquet remains optional.
 
 ## Explicitly unqualified
 
-- model download, load, or MuQ/MuLan/Qwen inference;
+- Qwen lyric inference (the qualified private song had no attached lyrics);
 - model-backed multimodal quality and numeric equivalence;
 - private lyrics, private historical labels, or a private music library;
-- the required one-song model smoke and conditional 20-song model smoke on the
-  explicitly authorized private subset;
+- the conditional 20-song model smoke on the explicitly authorized private subset;
 - operational 20-song and 200-song catalog-only gates on user data;
 - fresh 10,000-song time/RAM/VRAM/cache/ANN qualification;
 - guided private held-out evaluation and 100 blind human comparisons;
@@ -52,3 +51,13 @@ part of offline acceptance. WSL2/Python 3.12/CUDA is the live-model qualificatio
 environment; the PowerShell smoke/benchmark wrappers are catalog-only. A current
 resource preflight is mandatory before model load, inference, or download, and
 this campaign does not authorize a 98-song run.
+
+## Live one-song qualification
+
+On 2026-09-16, an authorized one-song WSL2/CUDA research-profile smoke produced
+finite, unit-normalized MuQ acoustic (1024-dimensional) and MuQ-MuLan
+semantic-audio (512-dimensional) vectors with zero item failures. Cold feature
+execution took 17.19 seconds. Observed total GPU memory peaked at 6869 MiB,
+temperature at 42 C, and power at 94.19 W; there was no OOM, NaN, driver reset,
+or host paging. The unchanged rerun served both feature views from cache in
+4.10 seconds. Evidence remains in the private run directory and is not committed.

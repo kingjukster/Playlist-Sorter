@@ -11,6 +11,7 @@ from playlist_sorter.embeddings.registry import (
     QwenLyricsAdapter,
     adapter_for,
 )
+from playlist_sorter.embeddings import registry
 
 
 class FakeModel:
@@ -60,6 +61,23 @@ def test_muq_segment_and_pooled_cache_reuse_without_model_calls(tmp_path):
         adapter.embed_audio([0.0], [[[0.0]]])
     with pytest.raises(ValueError, match="24 kHz"):
         adapter.embed_audio([0.0], sample_rate=44_100)
+
+
+def test_muq_loader_uses_official_runtime_for_each_variant(monkeypatch):
+    seen = []
+
+    class Runtime:
+        def __init__(self, snapshot, device, variant):
+            seen.append((snapshot, device, variant))
+
+    monkeypatch.setattr(registry, "_MuQRuntime", Runtime)
+    for variant in ("muq", "mulan"):
+        adapter = MuQAdapter(variant, *MODEL_REVISIONS[variant])
+        assert adapter._runtime_loader(Path("snapshot"), "cuda", "fp32")
+    assert seen == [
+        (Path("snapshot"), "cuda", "muq"),
+        (Path("snapshot"), "cuda", "mulan"),
+    ]
 
 
 def test_qwen_owns_tokenization_and_uses_windows_weighting_and_cache(tmp_path):

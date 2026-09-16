@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import importlib.util
 import shutil
 import struct
@@ -66,13 +67,22 @@ def test_segmentation_dedupes_overlap_and_descriptors_are_deterministic():
     assert describe_samples(samples, 24_000) == describe_samples(samples, 24_000)
 
 
-def test_cache_hit_invalidation_and_model_revisions(tmp_path):
+def test_cache_hit_invalidation_and_model_revisions(tmp_path, monkeypatch):
     cache = EmbeddingCache(tmp_path)
     provenance = {"source_sha256": "a", "model_revision": MODEL_REVISIONS["qwen"][1], "segment": 0}
     assert cache.get(provenance) is None
     cache.put(provenance, [1.0, 0.0])
     assert cache.get(provenance) == [1.0, 0.0]
     assert cache.get({**provenance, "model_revision": "new"}) is None
+    monkeypatch.setattr(
+        "playlist_sorter.embeddings.registry._snapshot",
+        lambda repository, revision: (_ for _ in ()).throw(
+            RuntimeError(
+                f"adapter is intentionally lazy; exact local snapshot unavailable for "
+                f"{repository}@{revision}"
+            )
+        ),
+    )
     with pytest.raises(RuntimeError, match="intentionally lazy"):
         adapter_for("qwen").load()
 
@@ -109,10 +119,19 @@ def test_chromaprint_unavailable_is_explicit(tmp_path, monkeypatch):
     assert songs[0].chromaprint_status.startswith("unavailable:")
 
 
-def test_safetensors_parquet_interface_is_lazy_and_offline_testable(tmp_path):
+def test_safetensors_parquet_interface_is_lazy_and_offline_testable(tmp_path, monkeypatch):
     cache = SafetensorsParquetCache(tmp_path)
     vector_path, index_path = cache.paths({"source_sha256": "a"})
     assert vector_path.suffix == ".safetensors" and index_path.suffix == ".parquet"
+
+    real_import = builtins.__import__
+
+    def import_without_optional_backends(name, *args, **kwargs):
+        if name == "numpy" or name.startswith(("pyarrow", "safetensors")):
+            raise ImportError(f"simulated unavailable backend: {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_optional_backends)
     with pytest.raises(CacheBackendUnavailable):
         cache.put({"source_sha256": "a"}, [1.0])
 

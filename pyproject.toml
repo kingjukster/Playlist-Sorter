@@ -26,11 +26,14 @@ playlist-sorter = "playlist_sorter.cli:main"
 [project.optional-dependencies]
 research = [
   "huggingface-hub==0.36.0",
+  "muq==0.1.0",
   "numpy==2.3.5",
   "pyarrow==22.0.0",
   "safetensors==0.7.0",
   "torch==2.9.1",
+  "torchaudio==2.9.1",
   "transformers==4.57.3",
+  "torchvision==0.24.1",
   "sentencepiece==0.2.1",
 ]
 
