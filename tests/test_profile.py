@@ -108,6 +108,42 @@ def test_incomplete_browser_capture_is_invalid(tmp_path: Path) -> None:
     assert any("of 785 source tracks" in error for error in report["errors"])
 
 
+def test_complete_browser_capture_shape_imports(tmp_path: Path) -> None:
+    path = tmp_path / "capture.json"
+    write_json(
+        path,
+        {
+            "playlist": {
+                "playlist_id": "pl.rp-example",
+                "name": "Replay",
+                "source_track_count": 1,
+                "is_complete": True,
+            },
+            "is_complete": True,
+            "tracks": [
+                {
+                    "position": 1,
+                    "title": "Song",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "duration": "3:15",
+                    "song_url": "https://music.apple.com/us/song/song/123",
+                    "album_url": "https://music.apple.com/us/album/album/456?i=123",
+                }
+            ],
+        },
+    )
+
+    profile, warnings, unresolved = build_profile([path])
+
+    assert not warnings
+    assert not unresolved
+    assert profile["playlists"][0]["track_count"] == 1
+    assert profile["tracks"][0]["duration_ms"] == 195_000
+    assert profile["tracks"][0]["apple_music_id"] == "123"
+    assert validate_profile(profile)["valid"] is True
+
+
 def test_csv_groups_playlists(tmp_path: Path) -> None:
     path = tmp_path / "tracks.csv"
     path.write_text(

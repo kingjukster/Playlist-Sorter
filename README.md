@@ -45,11 +45,41 @@ fails clearly if they differ.
 
 Use one of these methods.
 
+### Free local browser capture (recommended)
+
+This method requires no Apple Developer membership, API key, subscription
+beyond your existing Apple Music account, or third-party service. It reads only
+the track rows already rendered in the signed-in web player and downloads JSON
+locally; it does not read cookies, tokens, browser storage, or network traffic.
+
+For each playlist:
+
+1. Open the playlist in Apple Music on the web and wait for its first tracks.
+2. Open the browser developer tools and select **Console**.
+3. Paste the contents of `tools/apple_music_capture.js` and press Enter.
+4. Let the script scroll through every lazy-loaded batch, then confirm that the
+   alert says the capture is complete.
+5. Import the downloaded JSON file.
+
+```powershell
+.\.venv\Scripts\music-profile.exe add-playlist `
+  "https://music.apple.com/us/library/playlist/p.example" `
+  --capture "$env:USERPROFILE\Downloads\apple-music-example.json"
+```
+
+Repeat for the primary playlist, Replay All Time, and each yearly Replay, then
+run `music-profile build --enrich`. The script waits until the row count and
+page height stabilize. If loading does not stabilize or any track lacks its
+required title or artist, the capture is marked incomplete and validation fails
+rather than silently accepting truncated data. Apple sometimes leaves the page
+label at `100 Songs` for much larger private playlists, so completeness uses the
+fully loaded DOM row count as the stronger observation.
+
 ### MusicKit API with full pagination
 
-Apple requires a developer token plus a Music User Token for private-library
-data. Create those through Apple's documented authorization flow and place them
-in the current process environment:
+This optional route requires paid Apple Developer Program access, a developer
+token, and a Music User Token for private-library data. Place existing tokens in
+the current process environment:
 
 ```powershell
 $env:APPLE_MUSIC_DEVELOPER_TOKEN = "<developer-token>"
