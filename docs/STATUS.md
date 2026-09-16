@@ -1,8 +1,8 @@
 # Implementation and qualification status
 
-This candidate is based on `c5d2ca48afdffae091e914cc12c803bdd31814b7`. It is
-not a release, permission to scan private music, or evidence that a live model
-run occurred.
+This candidate is based on `dd76c680470efc3ce6bde7976c4c7196a4851486`. It is
+not a release or standing permission to scan or acquire private music. A bounded,
+explicitly authorized 20-song live-model qualification has occurred.
 
 ## Implemented
 
@@ -38,7 +38,6 @@ default pipeline cache is JSON; Safetensors/Parquet remains optional.
 - Qwen lyric inference (the qualified private song had no attached lyrics);
 - model-backed multimodal quality and numeric equivalence;
 - private lyrics, private historical labels, or a private music library;
-- the conditional 20-song model smoke on the explicitly authorized private subset;
 - operational 20-song and 200-song catalog-only gates on user data;
 - fresh 10,000-song time/RAM/VRAM/cache/ANN qualification;
 - guided private held-out evaluation and 100 blind human comparisons;
@@ -61,3 +60,23 @@ execution took 17.19 seconds. Observed total GPU memory peaked at 6869 MiB,
 temperature at 42 C, and power at 94.19 W; there was no OOM, NaN, driver reset,
 or host paging. The unchanged rerun served both feature views from cache in
 4.10 seconds. Evidence remains in the private run directory and is not committed.
+
+## Live 20-song qualification
+
+On 2026-09-16, the authorized WSL2/CUDA research-profile gate processed 20
+songs into 40 model-backed feature artifacts and 111 segments with zero item
+failures. The 20 MuQ acoustic vectors (1024 dimensions) and 20 MuQ-MuLan
+semantic-audio vectors (512 dimensions) were finite and unit normalized. Cold
+feature execution took 59.65 seconds, or 0.335 songs/second. Observed peak total
+GPU memory was 9209 MiB, peak GPU utilization was 90%, minimum available host
+RAM was 6374.6 MiB, temperature peaked at 47 C, and power at 103.49 W. There was
+no observed OOM, NaN, host paging, driver reset, data loss, or unhandled song
+failure.
+
+The unchanged rerun served all 40 artifacts from provenance-validated cache:
+100% cache reuse, 0.055 seconds of internal feature work, and 0.65 seconds of
+command wall time, approximately 91.8x faster than the cold run. Discovery used
+the acoustic, semantic-audio, and fused lenses and safely abstained with zero
+qualified candidates for this small subset. Private logs and run artifacts remain
+outside Git. This qualifies the bounded 20-song execution gate, not the 200-song,
+approximately 782-song, 10,000-song, lyric-model, or quality-evaluation gates.
