@@ -46,9 +46,7 @@ def test_catalog_mapper_applies_acquisition_metadata_only_for_exact_id_and_hash(
     }
 
     mapped = map_catalog_song(song, {acquisition_key: receipt})
-    mismatched = map_catalog_song(
-        song, {acquisition_key: {**receipt, "sha256": "b" * 64}}
-    )
+    mismatched = map_catalog_song(song, {acquisition_key: {**receipt, "sha256": "b" * 64}})
 
     assert mapped.integrity_fingerprint == source_hash
     assert mapped.source_path == song.source_path

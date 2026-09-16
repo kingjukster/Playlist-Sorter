@@ -98,9 +98,7 @@ def map_catalog_song(
         duration_seconds=song.duration_seconds,
         codec=song.codec,
         sample_rate=(
-            int(metadata["sample_rate"])
-            if metadata.get("sample_rate", "").isdigit()
-            else None
+            int(metadata["sample_rate"]) if metadata.get("sample_rate", "").isdigit() else None
         ),
         channels=(int(metadata["channels"]) if metadata.get("channels", "").isdigit() else None),
         file_size=song.size_bytes,
