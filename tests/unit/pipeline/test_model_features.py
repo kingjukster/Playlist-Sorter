@@ -62,7 +62,14 @@ def test_research_views_abstain_without_lyrics_and_warm_cache_skips_inference(
     tmp_path, monkeypatch
 ):
     _songs(tmp_path)
-    monkeypatch.setattr(service, "decode_audio_mono_24khz", lambda path: ([0.1] * 48_000, 24_000))
+    decode_calls = 0
+
+    def decode(path):
+        nonlocal decode_calls
+        decode_calls += 1
+        return [0.1] * 48_000, 24_000
+
+    monkeypatch.setattr(service, "decode_audio_mono_24khz", decode)
     monkeypatch.setattr(
         service,
         "select_segments",
@@ -79,12 +86,43 @@ def test_research_views_abstain_without_lyrics_and_warm_cache_skips_inference(
 
     assert {row["feature_view"] for row in rows} == {"acoustic", "semantic_audio", "lyrics"}
     assert calls == (fake.audio_calls, fake.text_calls)
+    assert decode_calls == 1
+    assert second["cache_hits"] == 3
     assert first["model_inference"] == second["model_inference"] == "model-backed research views"
 
     _songs(tmp_path, lyrics=None)
     service.build_features(tmp_path, "research", adapters=adapters, cache=cache)
     rows = service._read_collection(tmp_path, "features.json")
     assert "lyrics" not in {row["feature_view"] for row in rows}
+    assert decode_calls == 1
+
+
+def test_research_fast_path_fails_closed_on_model_revision_change(tmp_path, monkeypatch):
+    _songs(tmp_path, lyrics=None)
+    decode_calls = 0
+
+    def decode(path):
+        nonlocal decode_calls
+        decode_calls += 1
+        return [0.1] * 48_000, 24_000
+
+    monkeypatch.setattr(service, "decode_audio_mono_24khz", decode)
+    monkeypatch.setattr(
+        service,
+        "select_segments",
+        lambda samples, rate: [Segment(0.0, 1.0, "fixture")],
+    )
+    fake = FakeModel()
+    adapters = _adapters(fake)
+    cache = EmbeddingCache(tmp_path / "cache")
+    service.build_features(tmp_path, "research", adapters=adapters, cache=cache)
+    payload = json.loads((tmp_path / "features.json").read_text(encoding="utf-8"))
+    payload["items"][0]["model_revision"] = "changed"
+    (tmp_path / "features.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    service.build_features(tmp_path, "research", adapters=adapters, cache=cache)
+
+    assert decode_calls == 2
 
 
 def test_descriptor_profile_never_touches_adapters_and_unknown_profile_fails(tmp_path, monkeypatch):

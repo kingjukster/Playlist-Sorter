@@ -168,6 +168,49 @@ def _result_vector(result: Any) -> tuple[list[float], dict[str, Any], dict[str, 
     return [float(item) for item in vector], dict(provenance), telemetry_record
 
 
+def _research_cache_rows(
+    song: SongRecord,
+    prior_rows: list[dict[str, Any]],
+    adapters: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    """Return complete pinned research rows without touching source audio."""
+    expected = {
+        "acoustic": ("muq", {"sample_rate": 24000, "mono": True}),
+        "semantic_audio": ("mulan", {"sample_rate": 24000, "mono": True}),
+    }
+    if song.lyrics and song.lyrics.strip():
+        expected["lyrics"] = ("qwen", {"lyrics": True})
+    by_view = {row.get("feature_view"): row for row in prior_rows}
+    cached: list[dict[str, Any]] = []
+    for view, (adapter_name, preprocessing) in expected.items():
+        row = by_view.get(view)
+        adapter = adapters[adapter_name]
+        vector = row.get("vector") if row else None
+        provenance = row.get("provenance") if row else None
+        if (
+            not row
+            or row.get("source_fingerprint") != song.integrity_fingerprint
+            or row.get("preprocessing_config") != preprocessing
+            or row.get("model_repository") != getattr(adapter, "repository", adapter_name)
+            or row.get("model_revision") != getattr(adapter, "revision", "injected")
+            or not isinstance(vector, list)
+            or not vector
+            or any(
+                not isinstance(value, (int, float)) or not math.isfinite(value) for value in vector
+            )
+            or not isinstance(provenance, dict)
+            or provenance.get("source_sha256") != song.integrity_fingerprint
+            or provenance.get("model_revision") != getattr(adapter, "revision", "injected")
+        ):
+            return None
+        restored = dict(row)
+        telemetry = dict(restored.get("telemetry") or {})
+        telemetry.update({"items": 0, "batches": 0, "elapsed_seconds": 0.0, "cache_hit": True})
+        restored["telemetry"] = telemetry
+        cached.append(restored)
+    return cached
+
+
 def build_features(
     run: str | Path,
     profile: str = "descriptors",
@@ -184,19 +227,28 @@ def build_features(
     selected_profile = parse_feature_profile(profile)
     run_dir = Path(run)
     songs = [SongRecord.model_validate(item) for item in _read_collection(run_dir, "songs.json")]
-    previous = (
-        {item["source_fingerprint"]: item for item in _read_collection(run_dir, "features.json")}
-        if (run_dir / "features.json").is_file()
-        else {}
+    previous_rows = (
+        _read_collection(run_dir, "features.json") if (run_dir / "features.json").is_file() else []
     )
+    previous: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in previous_rows:
+        previous[item["source_fingerprint"]].append(item)
+    previous_segments: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    if (run_dir / "segments.json").is_file():
+        for item in _read_collection(run_dir, "segments.json"):
+            previous_segments[item["song_id"]].append(item)
     features: list[dict[str, Any]] = []
     segments: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     cache_hits = 0
     started = perf_counter()
     updated_songs: list[SongRecord] = []
+    if not selected_profile.descriptors:
+        adapters = adapters or {name: adapter_for(name) for name in ("muq", "mulan", "qwen")}
+        cache = cache or EmbeddingCache(run_dir / "embedding_cache")
     for song in songs:
-        cached = previous.get(song.integrity_fingerprint)
+        prior = previous.get(song.integrity_fingerprint, [])
+        cached = next((row for row in prior if row.get("feature_view") == "descriptors"), None)
         if (
             selected_profile.descriptors
             and cached
@@ -212,6 +264,18 @@ def build_features(
                 song.model_copy(update={"preprocessing_state": "complete", "error": None})
             )
             continue
+        if not selected_profile.descriptors:
+            assert adapters is not None
+            cached_research = _research_cache_rows(song, prior, adapters)
+            cached_segments = previous_segments.get(song.song_id, [])
+            if cached_research is not None and cached_segments:
+                features.extend(cached_research)
+                segments.extend(cached_segments)
+                cache_hits += len(cached_research)
+                updated_songs.append(
+                    song.model_copy(update={"preprocessing_state": "complete", "error": None})
+                )
+                continue
         item_started = perf_counter()
         try:
             samples, sample_rate = decode_audio_mono_24khz(song.source_path)
@@ -244,8 +308,7 @@ def build_features(
                 }
             )
         else:
-            adapters = adapters or {name: adapter_for(name) for name in ("muq", "mulan", "qwen")}
-            cache = cache or EmbeddingCache(run_dir / "embedding_cache")
+            assert adapters is not None and cache is not None
             sample_segments = [
                 samples[
                     round(segment.start_seconds * sample_rate) : round(

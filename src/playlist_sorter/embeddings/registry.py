@@ -166,7 +166,15 @@ class _MuQRuntime:
             ) from exc
         self.torch, self.device, self.variant = torch, device, variant
         if variant == "muq":
-            model = MuQ.from_pretrained(str(snapshot), local_files_only=True)
+            from safetensors.torch import load_file
+
+            with (snapshot / "config.json").open(encoding="utf-8") as handle:
+                muq_config = MuQConfig(**json.load(handle))
+            with torch.device(device):
+                model = MuQ(muq_config)
+            state = load_file(str(snapshot / "model.safetensors"), device=device)
+            model.load_state_dict(state, strict=True, assign=True)
+            del state
         elif variant == "mulan":
             muq_repository, muq_revision, _ = MODEL_REVISIONS["muq"]
             muq_snapshot = _snapshot(muq_repository, muq_revision)
@@ -180,7 +188,8 @@ class _MuQRuntime:
             # MuQ-MuLan's constructor normally downloads two base models even though
             # its own checkpoint contains their trained weights. Bootstrap those
             # architectures from pinned local configs, then load the complete outer
-            # checkpoint with torch's weights-only unpickler.
+            # checkpoint directly onto the target device. ``assign=True`` replaces
+            # the bootstrap tensors instead of retaining a second full CPU copy.
             muq_override = MuQ.__dict__.get("from_pretrained")
             xlm_override = XLMRobertaModel.__dict__.get("from_pretrained")
             setattr(
@@ -194,7 +203,8 @@ class _MuQRuntime:
                 classmethod(lambda cls, *args, **kwargs: cls(xlm_config)),
             )
             try:
-                model = MuQMuLan(mulan_config)
+                with torch.device(device):
+                    model = MuQMuLan(mulan_config)
             finally:
                 if muq_override is None:
                     delattr(MuQ, "from_pretrained")
@@ -205,9 +215,9 @@ class _MuQRuntime:
                 else:
                     setattr(XLMRobertaModel, "from_pretrained", xlm_override)
             state = torch.load(
-                snapshot / "pytorch_model.bin", map_location="cpu", weights_only=True
+                snapshot / "pytorch_model.bin", map_location=device, weights_only=True
             )
-            model.load_state_dict(state, strict=True)
+            model.load_state_dict(state, strict=True, assign=True)
             del state
         else:
             raise ValueError(f"unsupported MuQ runtime variant: {variant}")
