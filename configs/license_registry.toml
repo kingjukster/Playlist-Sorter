@@ -1,0 +1,29 @@
+# Explicitly permitted third-party licenses for dependency review.
+allowed = ["MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "PSF-2.0", "ISC"]
+review_required = ["GPL-2.0-only", "GPL-3.0-only", "LGPL-2.1-only", "LGPL-3.0-only"]
+policy_version = "1"
+
+# MuQ and MuQ-MuLan weights are CC-BY-NC-4.0. They are not redistributed by
+# Playlist Sorter; users must obtain them from the upstream repositories and
+# may use them only for personal/non-commercial research.
+
+[[models]]
+name = "MuQ"
+repository = "OpenMuQ/MuQ-large-msd-iter"
+revision = "0562a57814f6f8bbd9fdea0a25921a2fce1a841a"
+license = "CC-BY-NC-4.0"
+use_boundary = "Personal and non-commercial use only; do not enable commercial use."
+
+[[models]]
+name = "MuQ-MuLan"
+repository = "OpenMuQ/MuQ-MuLan-large"
+revision = "2e01c796b71dca71b45251384c04cd7b237c9020"
+license = "CC-BY-NC-4.0"
+use_boundary = "Personal and non-commercial use only; do not enable commercial use."
+
+[[models]]
+name = "Qwen3-Embedding-0.6B"
+repository = "Qwen/Qwen3-Embedding-0.6B"
+revision = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+license = "Apache-2.0"
+use_boundary = "Use subject to the Apache-2.0 license and local privacy policy."

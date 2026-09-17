@@ -1,0 +1,42 @@
+# Python/build artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Local secrets and private source material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/secrets/
+/private/
+/data/raw/
+/data/exports/
+/audio/
+/lyrics/
+/runs/
+/feedback/
+/embeddings/
+/cache/
+*.sqlite3
+*.db
+
+# Model weights, caches, and generated downloads (never version)
+/models/
+/checkpoints/
+/weights/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+.cache/
+hf_cache/
+downloads/

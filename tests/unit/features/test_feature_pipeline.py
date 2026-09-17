@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import builtins
+import importlib.util
+import shutil
+import struct
+from pathlib import Path
+
+import pytest
+
+from playlist_sorter.audio.segments import (
+    AudioDecodeError,
+    decode_audio_mono_24khz,
+    decode_wav_mono_24khz,
+    select_segments,
+)
+from playlist_sorter.catalog.scan import scan_library
+from playlist_sorter.embeddings.cache import (
+    CacheBackendUnavailable,
+    EmbeddingCache,
+    SafetensorsParquetCache,
+)
+from playlist_sorter.embeddings.registry import MODEL_REVISIONS, adapter_for
+from playlist_sorter.features.descriptors import describe_samples
+from playlist_sorter.features.lyrics import (
+    chunk_lyrics,
+    pooled_spherical_mean,
+    remove_duplicate_lines,
+)
+
+_FIXTURE = Path(__file__).parents[2] / "fixtures" / "audio" / "make_tiny_wav.py"
+_SPEC = importlib.util.spec_from_file_location("tiny_wav_fixture", _FIXTURE)
+assert _SPEC and _SPEC.loader
+_FIXTURE_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_FIXTURE_MODULE)
+write_tiny_wav = _FIXTURE_MODULE.write_tiny_wav
+
+
+def test_catalog_identity_renames_and_exact_duplicates_without_mutating_bytes(tmp_path):
+    first = write_tiny_wav(tmp_path / "first.wav")
+    before = first.read_bytes()
+    second = tmp_path / "renamed.wav"
+    shutil.copyfile(first, second)
+    songs, failures = scan_library(tmp_path)
+    assert not failures and len(songs) == 2
+    assert {song.sha256 for song in songs} == {songs[0].song_id}
+    assert first.read_bytes() == before
+
+
+def test_corrupt_and_short_audio_are_isolated(tmp_path):
+    (tmp_path / "bad.wav").write_bytes(b"not wav")
+    short = write_tiny_wav(tmp_path / "short.wav", seconds=0.1)
+    songs, failures = scan_library(tmp_path)
+    assert len(songs) == 1 and failures[0].code == "corrupt_audio"
+    samples, rate = decode_wav_mono_24khz(short)
+    segments = select_segments(samples, rate)
+    assert segments == [segments[0]] and segments[0].end_seconds == 10.0
+
+
+def test_segmentation_dedupes_overlap_and_descriptors_are_deterministic():
+    samples = [0.0] * 24_000 + [0.5] * (24_000 * 60) + [0.0] * 24_000
+    segments = select_segments(samples, 24_000)
+    assert len({segment.start_seconds for segment in segments}) == len(segments)
+    assert all(
+        segment.end_seconds - segment.start_seconds == pytest.approx(10) for segment in segments
+    )
+    assert describe_samples(samples, 24_000) == describe_samples(samples, 24_000)
+
+
+def test_cache_hit_invalidation_and_model_revisions(tmp_path, monkeypatch):
+    cache = EmbeddingCache(tmp_path)
+    provenance = {"source_sha256": "a", "model_revision": MODEL_REVISIONS["qwen"][1], "segment": 0}
+    assert cache.get(provenance) is None
+    cache.put(provenance, [1.0, 0.0])
+    assert cache.get(provenance) == [1.0, 0.0]
+    assert cache.get({**provenance, "model_revision": "new"}) is None
+    monkeypatch.setattr(
+        "playlist_sorter.embeddings.registry._snapshot",
+        lambda repository, revision: (_ for _ in ()).throw(
+            RuntimeError(
+                f"adapter is intentionally lazy; exact local snapshot unavailable for "
+                f"{repository}@{revision}"
+            )
+        ),
+    )
+    with pytest.raises(RuntimeError, match="intentionally lazy"):
+        adapter_for("qwen").load()
+
+
+def test_ffmpeg_decoder_is_lazy_and_returns_actionable_error(tmp_path, monkeypatch):
+    source = tmp_path / "song.mp3"
+    source.write_bytes(b"not really mp3")
+    monkeypatch.setattr("playlist_sorter.audio.segments.shutil.which", lambda _: None)
+    with pytest.raises(AudioDecodeError, match="ffmpeg_unavailable"):
+        decode_audio_mono_24khz(source)
+
+
+def test_ffmpeg_decoder_uses_float32_pipe_without_running_real_ffmpeg(tmp_path, monkeypatch):
+    source = tmp_path / "song.flac"
+    source.write_bytes(b"fixture")
+
+    class Completed:
+        returncode = 0
+        stdout = struct.pack("<2f", 0.25, -0.5)
+        stderr = b""
+
+    monkeypatch.setattr(
+        "playlist_sorter.audio.segments.subprocess.run", lambda *args, **kwargs: Completed()
+    )
+    assert decode_audio_mono_24khz(source, ffmpeg="mock-ffmpeg") == ([0.25, -0.5], 24_000)
+
+
+def test_chromaprint_unavailable_is_explicit(tmp_path, monkeypatch):
+    write_tiny_wav(tmp_path / "track.wav")
+    monkeypatch.setattr("playlist_sorter.catalog.scan.shutil.which", lambda _: None)
+    songs, failures = scan_library(tmp_path)
+    assert not failures
+    assert songs[0].chromaprint is None
+    assert songs[0].chromaprint_status.startswith("unavailable:")
+
+
+def test_safetensors_parquet_interface_is_lazy_and_offline_testable(tmp_path, monkeypatch):
+    cache = SafetensorsParquetCache(tmp_path)
+    vector_path, index_path = cache.paths({"source_sha256": "a"})
+    assert vector_path.suffix == ".safetensors" and index_path.suffix == ".parquet"
+
+    real_import = builtins.__import__
+
+    def import_without_optional_backends(name, *args, **kwargs):
+        if name == "numpy" or name.startswith(("pyarrow", "safetensors")):
+            raise ImportError(f"simulated unavailable backend: {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_optional_backends)
+    with pytest.raises(CacheBackendUnavailable):
+        cache.put({"source_sha256": "a"}, [1.0])
+
+
+def test_lyrics_missing_duplicate_removal_chunking_and_weighted_pooling():
+    assert remove_duplicate_lines("a\na\n\nb") == "a\nb"
+    assert chunk_lyrics([], 384, 64) == []
+    assert [len(chunk) for chunk in chunk_lyrics(list(range(800)))] == [384, 384, 160]
+    assert pooled_spherical_mean([[1, 0], [0, 1]], [3, 1]) == pytest.approx([0.948683, 0.316228])

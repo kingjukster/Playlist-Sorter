@@ -1,0 +1,8 @@
+schema_version: "1.0"
+items:
+  - url: "https://www.youtube.com/watch?v=REPLACE_ME"
+    title: "Optional expected title"
+    artist: "Optional expected artist"
+    rights_basis: "permission"
+    rights_note: "Describe who granted permission and where that record is kept."
+    authorization_confirmed: true

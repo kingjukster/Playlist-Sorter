@@ -1,0 +1,10 @@
+# Synthetic identifiers only. Replace them locally with IDs from a canonical run.
+guidance_id: generated-tone-pair
+name: Generated tones
+positive_song_ids:
+  - generated-tone-a
+  - generated-tone-b
+negative_song_ids: []
+must_link:
+  - [generated-tone-a, generated-tone-b]
+cannot_link: []

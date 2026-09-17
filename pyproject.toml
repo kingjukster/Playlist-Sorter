@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "playlist-sorter"
+version = "0.1.0"
+description = "Local-first playlist sorting utilities"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+authors = [{ name = "Playlist Sorter contributors" }]
+dependencies = [
+  "pydantic==2.12.5",
+  "streamlit==1.64.0",
+  "typer==0.21.0",
+  "yt-dlp==2026.8.19",
+  "psutil==7.2.2",
+  "PyYAML==6.0.3",
+  "tomli==2.4.0; python_version < '3.11'",
+]
+
+[project.scripts]
+playlist-sorter = "playlist_sorter.cli:main"
+
+[project.optional-dependencies]
+research = [
+  "huggingface-hub==0.36.0",
+  "igraph==1.0.0",
+  "leidenalg==0.12.0",
+  "muq==0.1.0",
+  "numpy==2.3.5",
+  "pyarrow==22.0.0",
+  "safetensors==0.7.0",
+  "torch==2.9.1",
+  "torchaudio==2.9.1",
+  "transformers==4.57.3",
+  "torchvision==0.24.1",
+  "sentencepiece==0.2.1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==9.0.2",
+  "ruff==0.14.10",
+  "mypy==1.19.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/playlist_sorter"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["playlist_sorter"]
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_return_any = false
