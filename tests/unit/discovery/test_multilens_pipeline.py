@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from playlist_sorter.discovery.backends import SeededLeidenBackend
 from playlist_sorter.graph import FusedGraph, ViewGraph
 from playlist_sorter.pipeline import service
@@ -65,6 +67,7 @@ def test_multilens_discovery_is_independent_overlap_safe_and_guidance_auditable(
     song_ids = _write_run(tmp_path, ("semantic_audio", "acoustic"))
     monkeypatch.setattr(service, "_discovery_graphs", _fake_graphs)
     monkeypatch.setattr(service, "SeededLeidenBackend", _ComponentsOnly)
+    monkeypatch.setattr(service, "leiden_available", lambda: True)
     guidance = tmp_path / "guidance.yaml"
     guidance.write_text(
         json.dumps(
@@ -83,6 +86,8 @@ def test_multilens_discovery_is_independent_overlap_safe_and_guidance_auditable(
     evidence = json.loads((tmp_path / "discovery_evidence.json").read_text(encoding="utf-8"))
 
     assert summary["lenses"] == ["acoustic", "fused", "semantic_audio"]
+    assert summary["backends"] == ["deterministic-components"]
+    assert summary["fallback_reasons"] == ["leiden-unavailable"]
     assert summary["guidance"] == "g"
     assert (tmp_path / "unguided_graph.json").is_file()
     selected = [item for item in evidence["candidates"] if item["selected"]]
@@ -120,7 +125,16 @@ def test_discovery_deduplicates_exact_source_song_ids(tmp_path, monkeypatch):
     songs_path.write_text(json.dumps(songs), encoding="utf-8")
     monkeypatch.setattr(service, "_discovery_graphs", _fake_graphs)
     monkeypatch.setattr(service, "SeededLeidenBackend", _ComponentsOnly)
+    monkeypatch.setattr(service, "leiden_available", lambda: True)
 
     summary = service.discover_run(tmp_path)
 
     assert summary["usable_songs"] == len(song_ids)
+
+
+def test_research_discovery_fails_closed_without_leiden(tmp_path, monkeypatch):
+    _write_run(tmp_path, ("semantic_audio", "acoustic"))
+    monkeypatch.setattr(service, "leiden_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="requires igraph and leidenalg"):
+        service.discover_run(tmp_path)

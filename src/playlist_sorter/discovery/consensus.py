@@ -7,7 +7,7 @@ from math import ceil, exp, floor
 from typing import Iterable, Mapping, Sequence
 
 PERTURBATION_COUNT = 12
-LOG_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 4.0)
+LOG_RESOLUTIONS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,8 @@ class CandidatePolicy:
     duplicate_jaccard: float = 0.80
     duplicate_centroid_cosine: float = 0.95
     meaningful_parent_child_ratio: float = 1.5
+    max_artist_dominance: float = 0.60
+    max_album_dominance: float = 0.75
     max_candidates: int = 40
     quotas: Mapping[str, int] = field(
         default_factory=lambda: {"broad": 8, "medium": 16, "narrow": 16}
@@ -66,6 +68,8 @@ class CandidateEvidence:
     margin: float
     lens: str = "fused"
     resolution: float = 1.0
+    artist_dominance: float = 0.0
+    album_dominance: float = 0.0
     lineage: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
@@ -190,6 +194,8 @@ def passes_candidate_gates(
         and candidate.stability >= policy.min_stability
         and candidate.core_recurrence >= policy.min_core_recurrence
         and candidate.margin >= policy.min_margin
+        and candidate.artist_dominance <= policy.max_artist_dominance
+        and candidate.album_dominance <= policy.max_album_dominance
     )
 
 

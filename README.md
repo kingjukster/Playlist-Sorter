@@ -62,6 +62,18 @@ case-normalized values fail closed.
   `e73636d4f797dec63c3081bb6ed5c7b0bb3f2089`; its outer checkpoint already
   contains the trained text-tower weights.
 
+Research discovery requires the pinned igraph/Leiden backend and fails closed
+when it is unavailable. The deterministic connected-components backend remains
+available only for the descriptor compatibility profile. Discovery summaries
+record the backend and any fallback reason so qualification cannot silently use
+the wrong clustering algorithm.
+
+Candidate separation is measured after independent robust calibration of each
+lens. The logarithmic resolution sweep spans `0.25` through `16.0`. Artist and
+album metadata remain excluded from every similarity calculation; after
+clustering they are used only to reject candidates dominated more than 60% by
+one known artist or 75% by one known album, and to create readable names.
+
 Research entries are content/provenance-addressed under that run's
 `embedding_cache`: source SHA-256, repository and revision, preprocessing,
 pooling, view, and segment identity determine the cache key. A cache hit skips

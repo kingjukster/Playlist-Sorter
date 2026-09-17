@@ -26,6 +26,8 @@ playlist-sorter = "playlist_sorter.cli:main"
 [project.optional-dependencies]
 research = [
   "huggingface-hub==0.36.0",
+  "igraph==1.0.0",
+  "leidenalg==0.12.0",
   "muq==0.1.0",
   "numpy==2.3.5",
   "pyarrow==22.0.0",

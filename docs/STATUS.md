@@ -97,9 +97,16 @@ rerun served every pre-normalization row from cache in 0.643 internal seconds an
 host RAM was 7904.7 MiB, peak temperature was 56 C, and peak power was 122.84 W.
 No OOM, NaN, paging, driver reset, or data loss was observed.
 
-Discovery retained one 11-member narrow fused candidate with 1.0 stability,
-0.816 cohesion, and 0.799 separation. Atomic JSON, CSV, and M3U8 exports each
-contained 11 membership rows. The private song names and artifacts are not
-committed. This qualifies staged local execution at this library size; it does
-not qualify lyric inference, subjective playlist quality, private-label
-evaluation, blind human comparison, or the fresh 10,000-song gate.
+The original discovery accidentally ran the connected-components fallback
+because the research environment omitted Leiden, retaining only one trivial
+11-song single-artist group. The corrected run fails closed without the pinned
+Leiden backend, calibrates each lens before applying the separation gate, adds
+post-clustering artist/album dominance gates, and extends the resolution sweep.
+It retained five diverse candidates containing 353 placements and 343 unique
+songs (44.3% library coverage). The 774-song cached discovery took 212.64 wall
+seconds, used about 1.16 GiB peak RSS with no swap, and reported `leiden` with no
+fallback reason. Atomic HTML, JSON, CSV, and M3U8 exports each contain 353 rows.
+The private song names and artifacts are not committed. This qualifies staged
+local execution at this library size; it does not qualify lyric inference,
+subjective playlist quality, private-label evaluation, blind human comparison,
+or the fresh 10,000-song gate.

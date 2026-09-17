@@ -1,4 +1,5 @@
 from playlist_sorter.discovery.consensus import (
+    LOG_RESOLUTIONS,
     CandidateEvidence,
     Community,
     align_communities,
@@ -32,6 +33,7 @@ def test_twelve_bounded_perturbations_cover_edge_and_segment_variants():
     assert {item.edge_multiplier for item in perturbations} == {0.95, 1.0, 1.05}
     assert len({item.segment_seed for item in perturbations}) == 4
     assert len({item.cluster_seed for item in perturbations}) == 12
+    assert LOG_RESOLUTIONS == (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
 
 
 def test_maximum_jaccard_alignment_and_recurrence_are_deterministic():
@@ -80,3 +82,17 @@ def test_exact_cross_lens_membership_duplicates_ignore_centroid_dimensions():
     )
     selected = select_candidates((right, left), library_size=20)
     assert len(selected) == 1
+
+
+def test_artist_and_album_dominated_candidates_fail_quality_gates():
+    diverse = _candidate("diverse", range(8))
+    artist_dominated = CandidateEvidence(
+        **{**diverse.__dict__, "candidate_id": "artist", "artist_dominance": 0.61}
+    )
+    album_dominated = CandidateEvidence(
+        **{**diverse.__dict__, "candidate_id": "album", "album_dominance": 0.76}
+    )
+
+    assert passes_candidate_gates(diverse, library_size=100)
+    assert not passes_candidate_gates(artist_dominated, library_size=100)
+    assert not passes_candidate_gates(album_dominated, library_size=100)

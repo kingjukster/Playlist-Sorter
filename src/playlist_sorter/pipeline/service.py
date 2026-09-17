@@ -7,7 +7,7 @@ are reported rather than silently replaced with fabricated embeddings.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 import csv
 import hashlib
@@ -33,9 +33,11 @@ from playlist_sorter.core.contracts import (
 from playlist_sorter.discovery import (
     CandidateEvidence,
     Community,
+    LOG_RESOLUTIONS,
     SeededLeidenBackend,
     community_consensus,
     default_perturbations,
+    leiden_available,
     passes_candidate_gates,
     select_candidates,
 )
@@ -47,6 +49,7 @@ from playlist_sorter.graph import (
     FusedGraph,
     ViewGraph,
     build_multi_lens_graphs,
+    calibrate_scores,
     fuse_view_graphs,
 )
 from playlist_sorter.guidance import apply_guidance, validate_guidance
@@ -522,6 +525,44 @@ def _similarity_profile(
     return tuple(values)
 
 
+def _metadata_dominance(
+    member_song_ids: frozenset[str], songs: dict[str, SongRecord], field: str
+) -> float:
+    values = [
+        value.casefold()
+        for song_id in member_song_ids
+        if (value := str(getattr(songs[song_id], field, "")).strip())
+    ]
+    if not values:
+        return 0.0
+    counts: defaultdict[str, int] = defaultdict(int)
+    for value in values:
+        counts[value] += 1
+    return max(counts.values()) / len(values)
+
+
+def _automatic_candidate_name(
+    item: CandidateEvidence, songs: dict[str, SongRecord]
+) -> tuple[str, list[str]]:
+    artist_counts = Counter(
+        artist for song_id in item.member_song_ids if (artist := songs[song_id].artist.strip())
+    )
+    leading_artists = [
+        artist
+        for artist, _ in sorted(artist_counts.items(), key=lambda pair: (-pair[1], pair[0]))[:3]
+    ]
+    lens = item.lens.replace("_", " ").title()
+    kind = item.granularity.title()
+    if leading_artists:
+        artist_label = (
+            leading_artists[0]
+            if len(leading_artists) == 1
+            else f"{', '.join(leading_artists[:-1])} & {leading_artists[-1]}"
+        )
+        return f"{artist_label} — {kind} {lens} Mix", leading_artists
+    return f"{kind} {lens} Mix {item.candidate_id[:6]}", []
+
+
 def _load_guidance(path: str | Path) -> GuidanceSet:
     try:
         import yaml  # type: ignore[import-untyped]
@@ -560,6 +601,11 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
     }
     if "descriptors" in vectors_by_lens:
         vectors_by_lens["descriptors"] = _standardize_sparse(vectors_by_lens["descriptors"])
+    research_lenses = set(vectors_by_lens) - {"descriptors"}
+    if research_lenses and not leiden_available():
+        raise RuntimeError(
+            "research discovery requires igraph and leidenalg; run `uv sync --extra research`"
+        )
     graphs = _discovery_graphs(usable, vectors_by_lens, k=30) if usable else {}
     graph_variants = (
         {k: _discovery_graphs(usable, vectors_by_lens, k=k) for k in K_VARIANTS} if usable else {}
@@ -639,7 +685,10 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
             },
         )
     backend = SeededLeidenBackend(min_edge_weight=0.50)
+    discovery_backends: set[str] = set()
+    fallback_reasons: set[str] = set()
     evidence: list[CandidateEvidence] = []
+    songs_by_id = {song.song_id: song for song in songs}
     lens_graphs: dict[str, ViewGraph | FusedGraph] = dict(graphs)
     if guidance is not None and "fused" in lens_graphs:
         # Guidance is deliberately an auditable comparison against unguided
@@ -656,8 +705,12 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
         )
     for lens, graph in lens_graphs.items():
         lens_edges = graph.edges
-        for resolution in (0.25, 0.5, 1.0, 2.0, 4.0):
+        calibrated_lens_edges = calibrate_scores(lens_edges)
+        for resolution in LOG_RESOLUTIONS:
             reference_result = backend.cluster(usable, lens_edges, resolution=resolution, seed=0)
+            discovery_backends.add(reference_result.backend)
+            if reference_result.fallback_reason:
+                fallback_reasons.add(reference_result.fallback_reason)
             reference = _communities(
                 usable, reference_result.labels, f"{lens}:r{resolution:g}", lens
             )
@@ -675,6 +728,9 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
                     resolution=resolution,
                     seed=perturbation.cluster_seed,
                 )
+                discovery_backends.add(result.backend)
+                if result.fallback_reason:
+                    fallback_reasons.add(result.fallback_reason)
                 trials.append(
                     _communities(usable, result.labels, f"{lens}:t{perturbation.trial}", lens)
                 )
@@ -686,18 +742,18 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
                 members = set(member_positions)
                 inside = [
                     score
-                    for (left, right), score in lens_edges.items()
+                    for (left, right), score in calibrated_lens_edges.items()
                     if left in members and right in members
                 ]
                 outside = [
                     score
-                    for (left, right), score in lens_edges.items()
+                    for (left, right), score in calibrated_lens_edges.items()
                     if (left in members) != (right in members)
                 ]
                 cohesion = median(inside) if inside else 0.0
                 outside_median = median(outside) if outside else 0.0
                 margin = cohesion - outside_median
-                centroid = _similarity_profile(member_positions, lens_edges, len(usable))
+                centroid = _similarity_profile(member_positions, calibrated_lens_edges, len(usable))
                 digest = f"{lens}|{resolution}|{'|'.join(sorted(community.member_song_ids))}"
                 candidate_id = hashlib.sha256(digest.encode()).hexdigest()[:16]
                 evidence.append(
@@ -714,6 +770,8 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
                         margin,
                         lens,
                         resolution,
+                        _metadata_dominance(community.member_song_ids, songs_by_id, "artist"),
+                        _metadata_dominance(community.member_song_ids, songs_by_id, "album"),
                     )
                 )
     selected = select_candidates(evidence, library_size=max(1, len(usable))) if usable else ()
@@ -721,9 +779,10 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
     memberships: list[Membership] = []
     for item in selected:
         ordered = sorted(item.member_song_ids)
+        candidate_name, leading_artists = _automatic_candidate_name(item, songs_by_id)
         candidate = PlaylistCandidate(
             candidate_id=item.candidate_id,
-            name=f"Discovered {item.granularity} {item.candidate_id[:6]}",
+            name=candidate_name,
             granularity=item.granularity,
             resolution=item.resolution,
             member_song_ids=ordered,
@@ -738,7 +797,11 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
             separation=max(0.0, min(1.0, item.distinctiveness)),
             novelty=max(0.0, min(1.0, item.novelty)),
             coverage=len(ordered) / len(usable),
-            naming_evidence=[f"{item.lens} similarity", item.granularity],
+            naming_evidence=[
+                f"{item.lens} similarity",
+                item.granularity,
+                *[f"frequent artist: {artist}" for artist in leading_artists],
+            ],
             lineage={key: list(value) for key, value in item.lineage.items()},
             guidance_ids=[guidance_id] if guidance_id else [],
         )
@@ -760,6 +823,8 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
         {
             "lenses": sorted(lens_graphs),
             "k_variants": list(K_VARIANTS),
+            "backends": sorted(discovery_backends),
+            "fallback_reasons": sorted(fallback_reasons),
             "candidates": [
                 {
                     "candidate_id": item.candidate_id,
@@ -771,6 +836,8 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
                     "cohesion": item.cohesion,
                     "distinctiveness": item.distinctiveness,
                     "margin": item.margin,
+                    "artist_dominance": item.artist_dominance,
+                    "album_dominance": item.album_dominance,
                     "rank": item.rank,
                     "passed_gates": passes_candidate_gates(item, library_size=max(1, len(usable))),
                     "selected": item.candidate_id in selected_ids,
@@ -788,6 +855,8 @@ def discover_run(run: str | Path, guidance: str | Path | None = None) -> dict[st
         "usable_songs": len(usable),
         "candidates": len(candidates),
         "lenses": sorted(lens_graphs),
+        "backends": sorted(discovery_backends),
+        "fallback_reasons": sorted(fallback_reasons),
         "guidance": guidance_id,
         "abstained": not candidates,
     }
