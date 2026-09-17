@@ -86,8 +86,8 @@ def export(
     format: str = typer.Option(..., "--format"),
     output: Path | None = typer.Option(None, "--output"),
 ) -> None:
-    if format not in {"json", "csv", "m3u8"}:
-        raise typer.BadParameter("format must be one of: json, csv, m3u8")
+    if format not in {"json", "csv", "m3u8", "html"}:
+        raise typer.BadParameter("format must be one of: json, csv, m3u8, html")
     from .export import ExportFormat, export_run
 
     destination = output or run / "exports" / f"playlists.{format}"

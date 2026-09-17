@@ -69,7 +69,7 @@ def _run(tmp_path):
     return run
 
 
-@pytest.mark.parametrize("format", ["json", "csv", "m3u8"])
+@pytest.mark.parametrize("format", ["json", "csv", "m3u8", "html"])
 def test_preview_round_trip_is_deterministic_and_preserves_sources(tmp_path, format):
     run = _run(tmp_path)
     before = (run / "songs.json").read_bytes()
@@ -84,6 +84,33 @@ def test_preview_round_trip_is_deterministic_and_preserves_sources(tmp_path, for
         assert [row["song_id"] for row in json.loads(first.text)["playlists"]] == ["a", "b"]
     if format == "m3u8":
         assert "D:/Music/A.mp3" in first.text
+    if format == "html":
+        assert "Your discovered playlists" in first.text
+        assert "Playlist z" in first.text
+        assert "2 songs" in first.text
+        assert 'Artist</strong><span class="separator"> — </span>Title a' in first.text
+        assert "D:/Music/A.mp3" not in first.text
+
+
+def test_html_report_escapes_names_and_explains_quality_metrics(tmp_path):
+    run = _run(tmp_path)
+    songs = json.loads((run / "songs.json").read_text(encoding="utf-8"))
+    songs["items"][0]["artist"] = '<script>alert("artist")</script>'
+    songs["items"][0]["title"] = "Rock & Roll"
+    (run / "songs.json").write_text(json.dumps(songs), encoding="utf-8")
+    playlists = json.loads((run / "playlists.json").read_text(encoding="utf-8"))
+    playlists["items"][0]["name"] = "Friends < Favorites"
+    playlists["items"][0]["naming_evidence"] = ["energy & tone"]
+    (run / "playlists.json").write_text(json.dumps(playlists), encoding="utf-8")
+
+    report = create_preview(run, "html").text
+
+    assert "Friends &lt; Favorites" in report
+    assert "&lt;script&gt;alert(&quot;artist&quot;)&lt;/script&gt;" in report
+    assert "Rock &amp; Roll" in report
+    assert "Why it grouped: energy &amp; tone" in report
+    assert "How consistently the same songs grouped together" in report
+    assert '<script>alert("artist")</script>' not in report
 
 
 def test_missing_or_unversioned_canonical_artifacts_fail_closed(tmp_path):

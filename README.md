@@ -32,14 +32,17 @@ playlist-sorter catalog scan --library <path> --output <run>
 playlist-sorter features build --run <run> --profile descriptors
 playlist-sorter discover --run <run> [--guidance <yaml>]
 playlist-sorter review --run <run>
-playlist-sorter export --run <run> --format json|csv|m3u8
+playlist-sorter export --run <run> --format html|json|csv|m3u8
 playlist-sorter evaluate --run <run> --benchmark <path>
 ```
 
 Each command invokes the corresponding service. `review` launches Streamlit on
 `127.0.0.1` only. `export` writes to `<run>/exports/playlists.<format>` by default
-or an explicit `--output`, after producing the exact preview bytes. Offline tests
-do not launch a persistent server or download model weights.
+or an explicit `--output`, after producing the exact preview bytes. The `html`
+format is a self-contained, private report that can be opened directly in any
+browser; it shows playlist quality metrics and readable Artist — Title lists
+without including source file paths. Offline tests do not launch a persistent
+server or download model weights.
 
 ### Feature profiles and cache behavior
 

@@ -157,7 +157,7 @@ def _render_blind_comparison(candidates, artifacts, run_directory: str) -> None:
 def _render_export(run_directory: str) -> None:
     st.subheader("Preview export")
     with st.form("export-preview"):
-        format = st.selectbox("Format", ["json", "csv", "m3u8"])
+        format = st.selectbox("Format", ["html", "json", "csv", "m3u8"])
         destination = st.text_input(
             "Derived export destination", value=str(Path(run_directory) / f"preview.{format}")
         )
